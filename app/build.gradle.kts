@@ -82,13 +82,15 @@ dependencies {
 
 // Publish the release APK under a name derived from versionName, so the artifact can never
 // drift from the version the app reports. Runs automatically after every release build.
+// The name uses hyphens only: GitHub rewrites spaces in release asset names to dots, which
+// makes a published download link silently 404.
 val distApk = tasks.register<Copy>("distApk") {
     group = "distribution"
-    description = "Copies the release APK to dist/DSH Remote-v$appVersion.apk"
+    description = "Copies the release APK to dist/DSH-Remote-v$appVersion.apk"
     dependsOn("assembleRelease")
     from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
     into(rootProject.file("dist"))
-    rename { "DSH Remote-v$appVersion.apk" }
+    rename { "DSH-Remote-v$appVersion.apk" }
 }
 
 // AGP creates the variant lifecycle tasks late, so the hook is registered in afterEvaluate.
