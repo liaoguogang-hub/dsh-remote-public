@@ -157,10 +157,11 @@ node mint.mjs "127.0.0.1:1815" 30              # 签发 30 天 Cookie
 并把地址与 Cookie 写进 `~/.dsh/dsh-remote/`，手机 App 直接抄。
 
 ```bash
-# 从 NPM 安装（发布后可用，会出现在 DSH 内的「插件中心」）
+# 从 NPM 安装（推荐，会出现在 DSH 内的「插件中心」）
+# https://www.npmjs.com/package/dsh-remote-hub
 dsh plugin --profile web add dsh-remote-hub
 
-# 或直接从本仓库源码安装（不需要 NPM 发布）
+# 或直接从本仓库源码安装（不经过 NPM）
 dsh plugin --profile web add github:liaoguogang-hub/dsh-remote-public
 ```
 
