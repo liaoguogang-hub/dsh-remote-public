@@ -158,7 +158,7 @@ node mint.mjs "127.0.0.1:1815" 30              # 签发 30 天 Cookie
 
 ```bash
 # 从 NPM 安装（发布后可用，会出现在 DSH 内的「插件中心」）
-dsh plugin --profile web add dsh-remote
+dsh plugin --profile web add dsh-remote-hub
 
 # 或直接从本仓库源码安装（不需要 NPM 发布）
 dsh plugin --profile web add github:liaoguogang-hub/dsh-remote-public

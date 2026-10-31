@@ -12,7 +12,7 @@
 #   upstreamPort   pin the DSH host port; 0 means discover it automatically
 - insert:
     - id: dsh-remote
-      name: 'dsh-remote'
+      name: 'dsh-remote-hub'
       config:
         enabled: true
         port: 6300
