@@ -1,0 +1,21 @@
+# Bundle patch layer for the dsh-remote plugin.
+#
+# One insert row mounts the Host half only: the plugin runs inside the DSH host process, starts
+# the Host-rewriting bridge and the tunnel from there, and writes the resulting URL + cookie to
+# ~/.dsh/dsh-remote/. There is no browser half — the phone talks to the bridge, not to the web UI.
+#
+# Every key below is overridable from a saved profile row:
+#   enabled        false disables the whole plugin without uninstalling it
+#   port           local bridge port the phone connects to on the LAN
+#   authority      Host header the bridge presents; the signed cookie is bound to it
+#   tunnel         "auto" (ngrok if found, else cloudflared), "off", "ngrok" or "cloudflared"
+#   upstreamPort   pin the DSH host port; 0 means discover it automatically
+- insert:
+    - id: dsh-remote
+      name: 'dsh-remote'
+      config:
+        enabled: true
+        port: 6300
+        authority: '127.0.0.1:1815'
+        tunnel: 'auto'
+        upstreamPort: 0

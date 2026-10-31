@@ -150,3 +150,45 @@ node mint.mjs "127.0.0.1:1815" 30              # 签发 30 天 Cookie
 ## 版本
 
 当前 `4.12.2`（versionCode 58），与自用版 4.12.2 功能一致。
+
+## 作为 DSH 插件安装（推荐）
+
+本仓库根目录同时是一个 **DSH plugin**（Node 侧），装进 DSH 后由宿主负责起桥接、开隧道、签 Cookie，
+并把地址与 Cookie 写进 `~/.dsh/dsh-remote/`，手机 App 直接抄。
+
+```bash
+# 从 NPM 安装（发布后可用，会出现在 DSH 内的「插件中心」）
+dsh plugin --profile web add dsh-remote
+
+# 或直接从本仓库源码安装（不需要 NPM 发布）
+dsh plugin --profile web add github:liaoguogang-hub/dsh-remote-public
+```
+
+装完重启 `dsh web`（或桌面端），插件会自动：
+
+1. 起桥接：`0.0.0.0:6300`，把 Host 改写成 `127.0.0.1:1815`（Cookie 因此不会因端口变化失效）；
+2. 自动发现 DSH 宿主端口（宿主每次重启都换端口，插件每次失败会重新扫一遍）；
+3. 开隧道：**有 ngrok 就用 ngrok**（固定域名），否则自动下载并验签 cloudflared 开免注册 quick tunnel；
+4. 签发 30 天 Cookie，写到 `~/.dsh/dsh-remote/status.json` 与 `connect.txt`。
+
+查看结果：
+
+```bash
+dsh-remote status     # 局域网地址、公网地址、Cookie、上游端口
+dsh-remote connect    # 直接打印要抄进手机的两行
+dsh-remote doctor     # 逐项自检：凭据、ngrok、cloudflared、宿主端口
+dsh-remote start      # 不开 DSH 也能单独前台跑（Ctrl+C 退出）
+```
+
+插件配置（profile 行里覆盖即可）：
+
+| 键 | 默认 | 作用 |
+|---|---|---|
+| `enabled` | `true` | 关掉插件但不卸载 |
+| `port` | `6300` | 桥接监听端口（手机连这个） |
+| `authority` | `127.0.0.1:1815` | 桥接呈现的 Host，Cookie 绑定它 |
+| `tunnel` | `auto` | `auto` / `off` / `ngrok` / `cloudflared` |
+| `upstreamPort` | `0` | 固定 DSH 宿主端口，`0` 表示自动发现 |
+
+> 公网隧道受网络影响：`api.trycloudflare.com` 不可达时插件会跳过公网、只给局域网地址，
+> 并在 `status.json` 里写明原因，不会假装成功。

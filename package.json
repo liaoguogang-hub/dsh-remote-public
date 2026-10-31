@@ -1,0 +1,49 @@
+{
+  "name": "dsh-remote",
+  "version": "0.1.0",
+  "description": "把电脑上的 DeepSeek Harness 变成手机可访问的服务：起桥接、自动开隧道（ngrok / cloudflared）、签发 30 天 Cookie，并把地址与凭据打印/落盘，配合 DSH Remote Android App 使用。",
+  "type": "module",
+  "main": "lib/index.js",
+  "bin": {
+    "dsh-remote": "bin/dsh-remote.mjs"
+  },
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "bin",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "mobile",
+    "remote",
+    "tunnel",
+    "ngrok",
+    "cloudflared"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "license": "MIT",
+  "author": "liaoguogang-hub",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liaoguogang-hub/dsh-remote-public.git"
+  },
+  "homepage": "https://github.com/liaoguogang-hub/dsh-remote-public",
+  "bugs": {
+    "url": "https://github.com/liaoguogang-hub/dsh-remote-public/issues"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

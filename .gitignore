@@ -22,3 +22,7 @@ tunnel.log.out
 
 # 本地放的单文件工具（cloudflared.exe 约 53 MB，不进仓库）
 tools/*.exe
+
+# 插件运行产物
+node_modules/
+.tmp-test/
