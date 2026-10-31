@@ -17,6 +17,21 @@ Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 
 功能与 UI 与自用版 4.12.2 完全一致。
 
+## 下载手机端 App
+
+**DSH Remote v4.17.1** · Android 8.0 (API 26) 及以上 · 2.6 MB
+
+[⬇️ 下载 APK](https://github.com/liaoguogang-hub/dsh-remote-public/releases/download/v4.17.1/DSH-Remote-v4.17.1.apk) ·
+[全部版本](https://github.com/liaoguogang-hub/dsh-remote-public/releases)
+
+安装后应用名「DSH Remote」，包名 `com.dsh.remote.ngrok`（可与作者的 `DSH` 自用版共存）。
+手机端不通过 npm 分发——npm 包 `dsh-remote-hub` 是电脑侧的 DSH 插件，两者配合使用：
+
+```
+电脑：dsh plugin --profile desktop add dsh-remote-hub   → 起桥接 / 开隧道 / 签 Cookie
+手机：装上面这个 APK → 填电脑给出的地址与 Cookie → 连接
+```
+
 ## 功能
 
 | 能力 | 状态 |
