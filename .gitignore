@@ -26,3 +26,6 @@ tools/*.exe
 # 插件运行产物
 node_modules/
 .tmp-test/
+
+# npm pack 产物
+*.tgz
