@@ -1,5 +1,7 @@
 # DSH Remote — Android 远程控制器
 
+[![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/liaoguogang-hub/dsh-remote-public)
+
 手机原生 App，直接控制电脑上的 **DeepSeek Harness (DSH)**。不是 WebView 套壳：
 Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 
@@ -159,7 +161,8 @@ node mint.mjs "127.0.0.1:1815" 30              # 签发 30 天 Cookie
 ```bash
 # 从 NPM 安装（推荐，会出现在 DSH 内的「插件中心」）
 # https://www.npmjs.com/package/dsh-remote-hub
-dsh plugin --profile web add dsh-remote-hub
+dsh plugin --profile desktop add dsh-remote-hub
+dsh plugin --profile web add dsh-remote-hub      # web profile 同样可用
 
 # 或直接从本仓库源码安装（不经过 NPM）
 dsh plugin --profile web add github:liaoguogang-hub/dsh-remote-public
