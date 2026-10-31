@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -12,6 +12,8 @@ val appVersion = "4.17.1"
 val appVersionCode = 66
 
 android {
+    // The R class lives in `com.dsh.remote`; the applicationId below is what makes this build
+    // installable next to the self-use build (same package name would replace it).
     namespace = "com.dsh.remote"
     compileSdk = 35
 
