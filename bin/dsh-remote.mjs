@@ -273,6 +273,18 @@ async function main() {
         const live = await bridgeHealthy(Number(process.env.DSH_REMOTE_PORT || 6300))
         const mismatch = live && (live.relay || null) !== (publicUrl || null)
         if (mismatch && live.pid) {
+          // NEVER signal a bridge that lives inside the desktop app: health.pid is then the DSH
+          // host process, and killing it takes the whole app down (this actually happened).
+          if (live.runtime === 'electron') {
+            console.log('')
+            console.log('  桥接由 DSH 桌面端内部托管（PID ' + live.pid + ' 就是 DSH 本体），不能在这里停止。')
+            console.log('  它的公网配置来自 profile 的 cordis.patch.yml：')
+            console.log(`    当前 relay = ${live.relay ?? '（未配置）'}，本次启动想要 ${publicUrl || '（不用中转）'}`)
+            console.log('  要改配置：编辑 cordis.patch.yml 里的 publicUrl 后重启 DSH；')
+            console.log('  要临时用本启动器的配置：先完全退出 DSH，再双击 connect.cmd。')
+            console.log('')
+            return
+          }
           console.log(`已有桥接配置不同（relay=${live.relay ?? '无'}），先停止它（PID ${live.pid}）再按当前配置启动`)
           try {
             process.kill(Number(live.pid))
