@@ -267,6 +267,27 @@ curl http://127.0.0.1:<bridgePort>/_dsh-remote/health
 > 提示：`cordis.patch.yml` 里的 `port` 只是**首选**端口。若被占用，实际端口会写在 `~/.dsh/dsh-remote/status.json`，
 > 一切链接与二维码都以那里为准，不必手改配置。
 
+### 用自己的服务器做中转（阿里云等自建 relay）
+
+如果你不用 ngrok，而是用一台云服务器（Caddy/nginx 终止 TLS + SSH 反向隧道）把本机暴露出去，
+就让插件把这个地址写进二维码，否则扫码只会得到 ngrok/cloudflared 的地址：
+
+```bash
+# 方式一：临时环境变量
+export DSH_REMOTE_PUBLIC_URL="https://your-relay.example"     # Windows: $env:DSH_REMOTE_PUBLIC_URL="https://..."
+dsh-remote start --open
+
+# 方式二：写进 profile 配置（推荐，长期有效）
+# ~/.dsh/profiles/<name>/cordis.patch.yml 的 dsh-remote 行：
+#   publicUrl: 'https://your-relay.example'
+```
+
+配置后插件不再启动 ngrok/cloudflared，并把该地址作为「公网地址」放进配对载荷；
+启动时会探测 `<publicUrl>/_dsh-remote/health`，结果记在 `status.json` 的 `public.reachable`
+（中转在、但反向隧道断了 → `false` 并打印警告）。
+
+前提：服务器侧确实把请求转发到**桥接监听的端口**（默认 6300）。
+
 ### 扫码配对（一次性配对码）
 
 不想手抄 Cookie 就用二维码：
