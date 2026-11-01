@@ -35,7 +35,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -458,7 +457,7 @@ private fun SettingsSheet(
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onScanQr) {
-                Icon(Icons.Filled.QrCodeScanner, contentDescription = "扫码配对")
+                ScanIcon()
             }
         }
 

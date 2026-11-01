@@ -19,9 +19,9 @@ Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 
 ## 下载手机端 App
 
-**DSH Remote v4.19.0** · Android 8.0 (API 26) 及以上 · 2.8 MB
+**DSH Remote v4.19.1** · Android 8.0 (API 26) 及以上 · 2.8 MB
 
-[⬇️ 下载 APK](https://github.com/liaoguogang-hub/dsh-remote-public/releases/download/v4.19.0/DSH-Remote-v4.19.0.apk) ·
+[⬇️ 下载 APK](https://github.com/liaoguogang-hub/dsh-remote-public/releases/download/v4.19.1/DSH-Remote-v4.19.1.apk) ·
 [全部版本](https://github.com/liaoguogang-hub/dsh-remote-public/releases)
 
 安装后应用名「DSH Remote」，包名 `com.dsh.remote.ngrok`（可与作者的 `DSH` 自用版共存）。
@@ -202,6 +202,7 @@ dsh plugin --profile web add github:liaoguogang-hub/dsh-remote-public
 
 ```bash
 dsh-remote qr         # 打开配对页（二维码），手机扫一下就自动填好
+dsh-remote start --open   # 起桥接并打印地址/Cookie，同时打开二维码页（connect.cmd 用的就是它）
 dsh-remote status     # 局域网地址、公网地址、Cookie、上游端口
 dsh-remote connect    # 直接打印要抄进手机的两行
 dsh-remote doctor     # 逐项自检：凭据、ngrok、cloudflared、宿主端口
@@ -231,6 +232,8 @@ dsh-remote qr
 
 浏览器会打开 `http://127.0.0.1:6300/_dsh-remote/pair`，显示一个二维码。手机 DSH Remote 里点
 「扫码配对」，扫完自动填入地址并换取登录凭据，直接连上。
+
+扫码后会自动判断：返回的是私有地址就填进「局域网」，公网地址填进「自定义」。
 
 安全设计：
 - 二维码里**不含 Cookie**，只含一个 **10 分钟有效的一次性配对码**（`{"v":1,"u":"<地址>","c":"<配对码>","e":<过期时间>}`）；

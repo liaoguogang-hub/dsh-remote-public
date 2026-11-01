@@ -5,7 +5,7 @@
  *   dsh-remote status      show LAN URL, public URL, cookie and upstream port
  *   dsh-remote connect     print the two lines to paste into the phone
  *   dsh-remote cookie      print only the cookie
- *   dsh-remote start       run the supervisor in the foreground (Ctrl+C stops it)
+ *   dsh-remote start [--open]  run the supervisor in the foreground; --open 打印地址并打开配对页
  *   dsh-remote stop        ask a foreground `start` to stop (best effort, via status file)
  *   dsh-remote doctor      check every prerequisite in one pass
  *   dsh-remote qr          open the pairing page (QR) in the default browser
@@ -67,6 +67,16 @@ function openBrowser(url) {
   return new Promise((resolve) => {
     execFile(cmd, args, { windowsHide: true }, () => resolve())
   })
+}
+
+/** Point the browser at the running bridge's pairing page (port comes from status, not a constant). */
+async function openPairPage(bridgePort) {
+  const page = `http://127.0.0.1:${bridgePort}/_dsh-remote/pair`
+  console.log('')
+  console.log('  配对页：', page)
+  console.log('  手机点右上角扫码按钮，扫这个二维码即可（10 分钟内有效，用一次作废）')
+  console.log('')
+  await openBrowser(page)
 }
 
 async function qrCommand() {
@@ -148,7 +158,31 @@ async function main() {
       await qrCommand()
       break
     case 'start': {
-      const handle = await start({ log: (m) => console.log(m) })
+      const wantOpen = process.argv.includes('--open')
+      let handle
+      try {
+        handle = await start({ log: (m) => console.log(m) })
+      } catch (err) {
+        // Port already taken: another bridge is serving; just show its pairing page.
+        if (/EADDRINUSE/.test(String(err?.message ?? err))) {
+          const running = readStatus()
+          const port = running?.bridgePort
+          if (port) {
+            console.log(`已有桥接在 127.0.0.1:${port} 运行，直接复用它`)
+            if (wantOpen) await openPairPage(port)
+            return
+          }
+        }
+        throw err
+      }
+      const status = handle.status
+      if (status?.cookie) {
+        console.log('')
+        console.log('  DSH 地址（局域网）：', status.lan?.url ?? '(未检测到局域网 IP)')
+        console.log('  DSH 地址（公网）  ：', status.public?.url ?? `无（${status.public?.note ?? '未开启'}）`)
+        console.log('  Cookie            ：', status.cookie)
+      }
+      if (wantOpen) await openPairPage(status?.bridgePort ?? Number(process.env.DSH_REMOTE_PORT || 6300))
       process.on('SIGINT', async () => {
         await handle.close()
         process.exit(0)

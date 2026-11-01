@@ -355,6 +355,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * The code is single-use and short-lived, so redeeming immediately is the whole point; on
      * success the returned cookie is persisted and the app connects straight away.
      */
+    /**
+     * True when the URL host is an RFC1918 address, i.e. reachable over the local network.
+     *
+     * Parsed by octet instead of a regex: Kotlin string literals make `\.` escape sequences easy to
+     * and a wrong escape is a compile error.
+     */
+    private fun isPrivateHost(url: String): Boolean = runCatching {
+        val host = java.net.URI(url.trim()).host.orEmpty()
+        val octets = host.split(".").mapNotNull { it.toIntOrNull() }
+        if (octets.size != 4) {
+            false
+        } else {
+            val (a, b) = octets
+            a == 10 || (a == 192 && b == 168) || (a == 172 && b in 16..31)
+        }
+    }.getOrDefault(false)
+
     /** Manual fallback for a broken/absent camera: address + code typed by hand. */
     fun pairFromCode(url: String, code: String) {
         val base = url.trim()
@@ -383,14 +400,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(connecting = true, error = null, mode = ConnectMode.Custom, urlDraft = url) }
             try {
                 val cookie = client.redeemPairing(url, code)
-                // Persist exactly what a manual connection would: mode, address, cookie override.
-                settings.mode = ConnectMode.Custom
-                settings.remember(ConnectMode.Custom, url, "")
-                settings.addCustomUrl(url)
+                // A private IPv4 host means the phone is on the same LAN, so store it under the
+                // 局域网 tab instead of dumping everything into 自定义 — that is what the user
+                // expects to see after scanning at home. Public tunnel URLs stay in 自定义.
+                val mode = if (isPrivateHost(url)) ConnectMode.Lan else ConnectMode.Custom
+                settings.mode = mode
+                settings.remember(mode, url, "")
+                if (mode == ConnectMode.Custom) settings.addCustomUrl(url)
                 settings.customCookie = cookie
                 settings.saveCookie(url, cookie)
                 _state.update {
                     it.copy(
+                        mode = mode,
                         cookieDraft = cookie,
                         urlDraft = url,
                         tokenDraft = "",
@@ -398,7 +419,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         error = null,
                     )
                 }
-                connect(ConnectMode.Custom)
+                connect(mode)
             } catch (t: Throwable) {
                 _state.update { it.copy(connecting = false, error = t.message ?: "配对失败") }
             }

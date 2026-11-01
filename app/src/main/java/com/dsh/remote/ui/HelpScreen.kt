@@ -69,6 +69,16 @@ fun HelpScreen(onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp, vertical = 14.dp),
         ) {
+            SectionTitle("扫码配对")
+            Paragraph("推荐流程：扫一下二维码就连上，不用手抄地址和 Cookie。")
+            Numbered(1, "电脑上生成二维码", "双击 connect.cmd，或在终端运行 dsh-remote qr；它会显示本机地址、Cookie，并自动打开配对页二维码。")
+            Numbered(2, "手机点右上角的扫码按钮", "本页右上角有扫码图标；连上以后也能从「设置」右上角再次扫码。")
+            Numbered(3, "对准屏幕扫描", "扫完自动选择局域网或公网、填入地址、换取凭据，并直接连接。")
+            Note("二维码里不含 Cookie，只含一个 10 分钟内有效、用一次就作废的配对码；兑换成功即失效，截图泄漏也没用。")
+            Note("扫码失败怎么办：让手机和电脑连同一个 WiFi 再扫一次；仍然不行就把配对页上的地址和 connect.cmd 打印的 Cookie 手动填到下面的输入框。")
+
+            Spacer(Modifier.height(14.dp))
+
             SectionTitle("三步连上")
             Numbered(1, "电脑上双击 connect.cmd", "它会自动起桥接、开隧道、签 Cookie，然后打印「DSH 地址」和「Cookie」两行。")
             Numbered(2, "把地址和 Cookie 粘进设置页", "设置 → 网络连接方式下面就是地址框和 Cookie 框。")
@@ -88,18 +98,8 @@ fun HelpScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
-            SectionTitle("扫码配对（推荐）")
-            Paragraph("不想手抄地址和 Cookie，就用扫码：手机对准电脑上的二维码，自动填好并连上。")
-            Numbered(1, "电脑上生成二维码", "装好 DSH 插件后运行：dsh-remote qr（或浏览器打开 http://127.0.0.1:6300/_dsh-remote/pair）。")
-            Numbered(2, "手机点右上角的扫码按钮", "在本页右上角有扫码图标；连上以后还能从「设置」右上角再次扫码。")
-            Numbered(3, "对准屏幕扫描", "扫完自动填地址、自动换凭据、自动连接，不需要再点连接。")
-            Note("二维码里不含 Cookie，只含一个 10 分钟内有效、用一次就作废的配对码；兑换成功即失效，截图泄漏也没用。")
-            Note("扫码失败怎么办：让手机和电脑连同一个 WiFi 再扫；仍不行就在电脑上运行 dsh-remote connect，把它打印的地址和 Cookie 手动填到下面的输入框。")
-
-            Spacer(Modifier.height(14.dp))
-
             SectionTitle("地址怎么选")
-            KeyValue("局域网", "手机和电脑同一个 WiFi。形如 http://192.168.1.23:6300，最快、最稳。")
+            KeyValue("局域网", "手机和电脑同一个 WiFi，最快最稳。地址以配对页或 connect.cmd 输出的为准。")
             KeyValue("ngrok", "人在外面时用。形如 https://xxxx.ngrok-free.dev，需要注册（见下）。")
             KeyValue("自定义", "任何符合 DSH 的地址，例如你自己反代出来的域名。")
 

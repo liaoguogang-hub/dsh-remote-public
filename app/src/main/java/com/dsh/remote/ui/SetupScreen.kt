@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -75,7 +74,7 @@ fun SetupScreen(
                     modifier = Modifier.weight(1f),
                 )
                 IconButton(onClick = onScanQr) {
-                    Icon(Icons.Filled.QrCodeScanner, contentDescription = "扫码配对")
+                    ScanIcon()
                 }
                 IconButton(onClick = onOpenHelp) {
                     Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "帮助")
