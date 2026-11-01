@@ -62,6 +62,21 @@ function printStatus() {
   console.log('')
 }
 
+/** Describe the process listening on a port (Windows only, best effort). */
+function describePortOwner(port) {
+  if (process.platform !== 'win32') return Promise.resolve(null)
+  const script =
+    `$c = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1;` +
+    'if ($c) { $p = Get-CimInstance Win32_Process -Filter (\"ProcessId=$($c.OwningProcess)\");' +
+    ' "PID $($c.OwningProcess): $($p.CommandLine)" }'
+  return new Promise((resolve) => {
+    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 8000, windowsHide: true }, (err, stdout) => {
+      const out = String(stdout || '').trim()
+      resolve(err || !out ? null : out.slice(0, 180))
+    })
+  })
+}
+
 function openBrowser(url) {
   const cmd = process.platform === 'win32' ? 'cmd' : process.platform === 'darwin' ? 'open' : 'xdg-open'
   const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]
@@ -188,6 +203,29 @@ async function doctor() {
   }
   console.log('  ' + '-'.repeat(52))
   console.log('')
+  // Who owns the bridge port right now, and what public URL is advertised.
+  const bridgePort = Number(process.env.DSH_REMOTE_PORT || 6300)
+  const health = await bridgeHealthy(bridgePort)
+  if (health) {
+    console.log(`  ✔ 桥接端口        ${bridgePort}（本插件，pairing=${health.pairing}）`)
+  } else {
+    console.log(`  · 桥接端口        ${bridgePort} 上没有本插件在跑`)
+    const owner = await describePortOwner(bridgePort)
+    if (owner) console.log(`     被其它进程占用:   ${owner}`)
+  }
+  const st = readStatus()
+  const pub = st?.public
+  if (pub?.url) {
+    const tag = pub.kind === 'relay' ? '自建中转' : pub.kind
+    console.log(`  ▲ 公网地址        ${pub.url}（${tag}${pub.reachable === false ? '，当前不可达' : ''}）`)
+    if (pub.kind !== 'relay' && process.env.DSH_REMOTE_PUBLIC_URL) {
+      console.log('     （已设置 DSH_REMOTE_PUBLIC_URL，但当前桥接未采用：需要重启桥接）')
+    }
+  } else if (process.env.DSH_REMOTE_PUBLIC_URL) {
+    console.log(`  · 公网地址        未生效（要重启桥接才会用 ${process.env.DSH_REMOTE_PUBLIC_URL}）`)
+  } else {
+    console.log('  · 公网地址        未配置（如需自建中转，设置 DSH_REMOTE_PUBLIC_URL）')
+  }
 }
 
 async function main() {

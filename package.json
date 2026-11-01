@@ -1,6 +1,6 @@
 {
   "name": "dsh-remote-hub",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "DSH 插件：把电脑上的 DeepSeek Harness 变成手机可访问的服务——起桥接、自动开隧道（ngrok / cloudflared）、签发 30 天 Cookie，并输出地址与凭据，配合 DSH Remote Android App 使用。",
   "type": "module",
   "main": "lib/index.js",
