@@ -19,9 +19,9 @@ Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 
 ## 下载手机端 App
 
-**DSH Remote v4.20.0** · Android 8.0 (API 26) 及以上 · 2.8 MB
+**DSH Remote v4.20.1** · Android 8.0 (API 26) 及以上 · 2.8 MB
 
-[⬇️ 下载 APK](https://github.com/liaoguogang-hub/dsh-remote-public/releases/download/v4.20.0/DSH-Remote-v4.20.0.apk) ·
+[⬇️ 下载 APK](https://github.com/liaoguogang-hub/dsh-remote-public/releases/download/v4.20.1/DSH-Remote-v4.20.1.apk) ·
 [全部版本](https://github.com/liaoguogang-hub/dsh-remote-public/releases)
 
 安装后应用名「DSH Remote」，包名 `com.dsh.remote.ngrok`（可与作者的 `DSH` 自用版共存）。
@@ -221,6 +221,19 @@ dsh-remote start      # 不开 DSH 也能单独前台跑（Ctrl+C 退出）
 
 > 公网隧道受网络影响：`api.trycloudflare.com` 不可达时插件会跳过公网、只给局域网地址，
 > 并在 `status.json` 里写明原因，不会假装成功。
+
+### 装完之后
+
+插件随 DSH 启动自动工作，**不需要手动跑 connect.cmd**；装的时候没有提示是正常的，日志里会出现：
+
+```
+dsh-remote: ready — 手机端扫码：dsh-remote qr（或浏览器打开 http://127.0.0.1:<端口>/_dsh-remote/pair）
+```
+
+想手动确认/手动起，就在仓库目录双击 `connect.cmd`（它和插件是同一份代码，会打印地址与 Cookie 并自动打开二维码）。
+
+**Cookie 跨重启有效**：桥接始终向 DSH 呈现固定 authority（默认 `127.0.0.1:1815`），
+所以 DSH 换端口、桥接重启都不会让手机上的凭据失效；只有签名密钥变化或 Cookie 到期（30 天）才需要重新扫码。
 
 ### 扫码配对（一次性配对码）
 

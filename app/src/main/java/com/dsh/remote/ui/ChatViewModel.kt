@@ -473,9 +473,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                         return@launch
                     }
                 }
+                val raw = t.message ?: "连接失败"
+                // A 401 here almost always means the credential no longer matches the computer
+                // (cookie rotated, or the bridge now presents a different authority), so tell the
+                // user to re-scan instead of leaving a bare "连接失败".
+                val friendly = if (raw.contains("401") || raw.contains("unauthorized", ignoreCase = true)) {
+                    "电脑端凭据已失效：点右上角扫码重新配对即可（10 秒）"
+                } else {
+                    raw
+                }
                 _state.update {
                     it.copy(connecting = false, connected = false, screen = Screen.Setup,
-                        error = t.message ?: "连接失败")
+                        error = friendly)
                 }
             }
         }

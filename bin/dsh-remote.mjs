@@ -136,6 +136,11 @@ async function main() {
   switch (command) {
     case 'status':
       printStatus()
+      if (!readStatus()) {
+        console.log('  下一步：dsh-remote start --open  （起桥接并打开配对二维码）')
+        console.log('         或双击仓库里的 connect.cmd')
+        console.log('')
+      }
       break
     case 'connect':
       if (fs.existsSync(CONNECT_FILE)) console.log(fs.readFileSync(CONNECT_FILE, 'utf8'))

@@ -8,8 +8,8 @@ plugins {
 //   * the in-APK versionName (shown in Android's app info and in the app's settings sheet)
 //   * the dist artifact name (DSH-Remote-v<version>.apk)
 // stay in sync by construction —the copy task below derives the file name from it.
-val appVersion = "4.20.0"
-val appVersionCode = 72
+val appVersion = "4.20.1"
+val appVersionCode = 73
 
 android {
     // The R class lives in `com.dsh.remote`; the applicationId below is what makes this build

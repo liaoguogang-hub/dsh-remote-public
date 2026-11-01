@@ -1,0 +1,16 @@
+fix: 恢复固定 authority（Cookie 跨重启存活）+ 401 指纹探测 + 端口占用自愈（插件 0.3.0 / APK 4.20.1）
+
+根因（在另一台机器上暴露）：
+- 把 authority 绑到「探测到的端口」后，每次 DSH 重启端口变化 → Cookie audience 变化 → 手机旧凭据失效
+- 实测证明 DSH 校验的是「Cookie.authority == Host」，不是「Host == 自身端口」，所以固定 1815 才对
+
+插件：
+- discover.js: 无 Cookie 的 401 指纹探测（dsh web authentication required），摆脱 200 误判
+- supervisor.js: 桥接先起、后台等宿主 Web 服务（≤2min）；6300 被占自动改绑临时端口并如实上报
+- bridge.js: 新增 /_dsh-remote/health 便于识别已有桥接
+- index.js: 启动日志打印下一步（dsh-remote qr / connect.cmd），解决安装后无提示
+
+APK：
+- 401/unauthorized 时提示「凭据已失效，请重新扫码」
+
+验证：同一旧 Cookie 在桥接重启前后均 200；指纹探测只命中真实 DSH（3081/13812），不再误判
