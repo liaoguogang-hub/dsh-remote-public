@@ -189,14 +189,17 @@ class DshClient {
         }
     }.getOrDefault(false)
 
+    /** What a pairing handshake yields: both transports plus the credential. */
+    data class PairingResult(val lan: String?, val public: String?, val cookie: String)
+
     /**
      * Redeem a one-time pairing code for the browser cookie.
      *
-     * The QR code carries `{v,u,c,e}` where `u` is the base URL to talk to and `c` is a code that
-     * expires in ~10 minutes and burns on first use. Redeeming over HTTPS on that same base URL is
-     * what turns a photographed code into nothing useful.
+     * The QR payload carries both addresses (`l` = LAN, `u` = public tunnel), so one scan can fill
+     * both tabs; the caller then decides which one to use. The code is single-use and short-lived,
+     * which is what makes a photographed code useless.
      */
-    suspend fun redeemPairing(base: String, code: String): String = withContext(Dispatchers.IO) {
+    suspend fun redeemPairing(base: String, code: String): PairingResult = withContext(Dispatchers.IO) {
         val root = normalizeBase(base)
         val body = JSONObject().put("code", code).toString()
         val req = Request.Builder()
@@ -218,10 +221,30 @@ class DshClient {
             val doc = JSONObject(text)
             val cookie = doc.optString("cookie")
             if (cookie.isEmpty()) throw IllegalStateException("电脑没有返回凭据")
-            baseUrl = root
+            val lan = doc.optString("lan").takeIf { it.isNotBlank() }
+            val pub = doc.optString("public").takeIf { it.isNotBlank() }
             this@DshClient.cookie = cookie
-            cookie
+            baseUrl = lan ?: pub ?: root
+            PairingResult(lan, pub, cookie)
         }
+    }
+
+    /**
+     * Fast TCP reachability check for a base URL.
+     *
+     * Used to decide "same Wi-Fi or not": a LAN address that does not answer within ~400 ms is
+     * treated as unreachable, so the app falls through to the tunnel instead of hanging.
+     */
+    suspend fun reachable(base: String, timeoutMs: Int = 400): Boolean = withContext(Dispatchers.IO) {
+        val uri = runCatching { java.net.URI(normalizeBase(base)) }.getOrNull() ?: return@withContext false
+        val host = uri.host ?: return@withContext false
+        val port = if (uri.port > 0) uri.port else if (uri.scheme == "https") 443 else 80
+        runCatching {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), timeoutMs)
+                true
+            }
+        }.getOrDefault(false)
     }
 
     /** Cheap liveness/auth probe: throws when the stored cookie is no longer accepted. */

@@ -382,12 +382,22 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         pairFromQr(org.json.JSONObject().put("v", 1).put("u", base).put("c", c).put("e", 0L).toString())
     }
 
+    /**
+     * Complete a QR pairing handshake.
+     *
+     * The payload carries both addresses (`l` = LAN, `u` = public). One scan stores both tabs so the
+     * user never has to scan again, then connects over whichever transport actually answers right
+     * now — LAN first (fast, no tunnel), public tunnel as the fallback.
+     */
     fun pairFromQr(raw: String) {
         val parsed = runCatching { JSONObject(raw) }.getOrNull()
             ?: return _state.update { it.copy(error = "二维码内容无法识别") }
-        val url = parsed.optString("u").trim()
+        val lan = parsed.optString("l").trim().ifEmpty { null }
+        // Backwards compatibility with the older payload that only had `u`.
+        val pub = parsed.optString("u").trim().ifEmpty { null }
         val code = parsed.optString("c").trim()
-        if (url.isEmpty() || code.isEmpty()) {
+        val bootstrap = lan ?: pub
+        if (bootstrap == null || code.isEmpty()) {
             return _state.update { it.copy(error = "这不是 DSH Remote 的配对码") }
         }
         val expiresAt = parsed.optLong("e", 0L)
@@ -397,33 +407,43 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (_state.value.connecting) return
 
         viewModelScope.launch {
-            _state.update { it.copy(connecting = true, error = null, mode = ConnectMode.Custom, urlDraft = url) }
+            _state.update { it.copy(connecting = true, error = null) }
             try {
-                val cookie = client.redeemPairing(url, code)
-                // A private IPv4 host means the phone is on the same LAN, so store it under the
-                // 局域网 tab instead of dumping everything into 自定义 — that is what the user
-                // expects to see after scanning at home. Public tunnel URLs stay in 自定义.
-                val mode = if (isPrivateHost(url)) ConnectMode.Lan else ConnectMode.Custom
-                settings.mode = mode
-                settings.remember(mode, url, "")
-                if (mode == ConnectMode.Custom) settings.addCustomUrl(url)
-                settings.customCookie = cookie
-                settings.saveCookie(url, cookie)
+                val result = client.redeemPairing(bootstrap, code)
+                val lanUrl = result.lan ?: lan
+                val pubUrl = result.public ?: pub
+
+                // Persist both tabs: 局域网 and ngrok. Nothing lands in 自定义 any more.
+                lanUrl?.let { settings.remember(ConnectMode.Lan, it, "") }
+                pubUrl?.let { settings.remember(ConnectMode.Tunnel, it, "") }
+                settings.customCookie = result.cookie
+                (lanUrl ?: pubUrl)?.let { settings.saveCookie(it, result.cookie) }
+
+                // Prefer the LAN transport when it answers; otherwise go through the tunnel.
+                val target = pickTransport(lanUrl, pubUrl)
+                settings.mode = target
                 _state.update {
                     it.copy(
-                        mode = mode,
-                        cookieDraft = cookie,
-                        urlDraft = url,
+                        mode = target,
+                        cookieDraft = result.cookie,
+                        urlDraft = settings.url(target),
                         tokenDraft = "",
                         connecting = false,
                         error = null,
                     )
                 }
-                connect(mode)
+                connect(target)
             } catch (t: Throwable) {
                 _state.update { it.copy(connecting = false, error = t.message ?: "配对失败") }
             }
         }
+    }
+
+    /** LAN if it answers within the probe window, else the public tunnel, else LAN as last resort. */
+    private suspend fun pickTransport(lanUrl: String?, pubUrl: String?): ConnectMode {
+        if (lanUrl != null && client.reachable(lanUrl)) return ConnectMode.Lan
+        if (pubUrl != null) return ConnectMode.Tunnel
+        return ConnectMode.Lan
     }
 
     fun connect(mode: ConnectMode) {
@@ -442,6 +462,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 establish(mode, url, token, restoreSession = true)
             } catch (t: Throwable) {
                 client.reset()
+                // LAN-first policy: when the private address stops answering (left the house, changed
+                // Wi-Fi), fall through to the tunnel automatically instead of dumping the user on the
+                // setup screen. Only one hop: a tunnel failure reports normally.
+                if (mode == ConnectMode.Lan) {
+                    val tunnelUrl = settings.url(ConnectMode.Tunnel)
+                    if (tunnelUrl.isNotBlank()) {
+                        _state.update { it.copy(connecting = false, error = null) }
+                        connect(ConnectMode.Tunnel)
+                        return@launch
+                    }
+                }
                 _state.update {
                     it.copy(connecting = false, connected = false, screen = Screen.Setup,
                         error = t.message ?: "连接失败")
