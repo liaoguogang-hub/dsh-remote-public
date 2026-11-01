@@ -98,6 +98,42 @@ curl -s -o /dev/null -w "%{http_code} %{size_download}\n" -L \
 
 ---
 
+## 2.5 装进桌面端 profile（`--profile desktop` 被应用独占）
+
+`dsh plugin --profile desktop add ...` 会被拒绝：
+
+```
+error: profile "desktop" is managed exclusively by the Electron application
+```
+
+桌面端 profile（`~/.dsh/profiles/desktop`）由 Electron 应用托管，只能手工两步：
+
+```bash
+cd ~/.dsh/profiles/desktop
+
+# 1) 用应用自带的 pnpm 装包；必须显式指定官方 registry，
+#    否则 profile 里的镜像源可能给出旧版本（实测装到过 0.1.0）
+NODE="…/primary-runtime/dependencies/node/bin/node.exe"
+PNPM="…/primary-runtime/dependencies/pnpm/bin/pnpm.mjs"
+"$NODE" "$PNPM" add dsh-remote-hub@<version> --registry=https://registry.npmjs.org
+
+# 2) 在 cordis.patch.yml 里插入一行（改前先备份）
+- insert:
+    - id: dsh-remote
+      name: dsh-remote-hub
+      config:
+        enabled: true
+        port: 6300
+        authority: '127.0.0.1:1815'
+        tunnel: auto
+        publicUrl: 'https://你的中转'   # 不需要自建中转就删掉这行
+        upstreamPort: 0
+```
+
+**桌面端会热加载这行配置**：保存 `cordis.patch.yml` 后插件立刻被加载、桥接在宿主进程里起来，
+`netstat -ano | findstr :6300` 会指向 `DeepSeek Harness.exe` 的 PID（而不是 node），
+这正是"桥接随 DSH 常驻、不再被 shell 回收"的标志。不改配置的话，最稳的验证方式是完全重启应用一次。
+
 ## 3. 公共版 / 自用版的同步
 
 两棵树共用一套 UI 代码，差异只在**凭据与映射**。从公共版同步到自用版时，逐个确认这几个文件：
