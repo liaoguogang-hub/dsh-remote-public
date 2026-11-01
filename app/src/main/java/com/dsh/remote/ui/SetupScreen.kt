@@ -47,6 +47,8 @@ fun SetupScreen(
     onConnect: () -> Unit,
     onDismissError: () -> Unit,
     onOpenHelp: () -> Unit,
+    onScanQr: () -> Unit,
+    onPairManual: (String, String) -> Unit,
 ) {
     Scaffold { inner ->
         Column(
@@ -90,6 +92,8 @@ fun SetupScreen(
                 onConnect = onConnect,
                 onDismissError = onDismissError,
                 onOpenHelp = onOpenHelp,
+                onScanQr = onScanQr,
+                onPairManual = onPairManual,
             )
 
             Spacer(Modifier.height(22.dp))

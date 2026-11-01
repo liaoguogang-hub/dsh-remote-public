@@ -116,6 +116,8 @@ fun ChatScreen(
     onPickHistory: (String) -> Unit,
     onDeleteHistory: (String) -> Unit,
     onConnect: () -> Unit,
+    onScanQr: () -> Unit,
+    onPairManual: (String, String) -> Unit,
     onDisconnect: () -> Unit,
     onExit: () -> Unit,
     onApproval: (ApprovalRequest, Boolean) -> Unit,
@@ -401,6 +403,11 @@ fun ChatScreen(
                 onDeleteHistory = onDeleteHistory,
                 onConnect = onConnect,
                 onDismissError = onDismissError,
+                onScanQr = {
+                    showSettings = false
+                    onScanQr()
+                },
+                onPairManual = onPairManual,
                 onOpenHelp = {
                     showSettings = false
                     onOpenHelp()
@@ -431,6 +438,8 @@ private fun SettingsSheet(
     onConnect: () -> Unit,
     onDismissError: () -> Unit,
     onOpenHelp: () -> Unit,
+    onScanQr: () -> Unit,
+    onPairManual: (String, String) -> Unit,
     onDisconnect: () -> Unit,
 ) {
     Column(
@@ -498,6 +507,8 @@ private fun SettingsSheet(
             onConnect = onConnect,
             onDismissError = onDismissError,
             onOpenHelp = onOpenHelp,
+            onScanQr = onScanQr,
+            onPairManual = onPairManual,
         )
 
         Spacer(Modifier.height(16.dp))

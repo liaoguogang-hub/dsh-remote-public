@@ -8,8 +8,8 @@ plugins {
 //   * the in-APK versionName (shown in Android's app info and in the app's settings sheet)
 //   * the dist artifact name (DSH-Remote-v<version>.apk)
 // stay in sync by construction —the copy task below derives the file name from it.
-val appVersion = "4.17.1"
-val appVersionCode = 66
+val appVersion = "4.18.0"
+val appVersionCode = 67
 
 android {
     // The R class lives in `com.dsh.remote`; the applicationId below is what makes this build
@@ -73,6 +73,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+
+    // QR pairing. ZXing is used instead of ML Kit on purpose: the bundled ML Kit scanner needs
+    // Google Play services, and Huawei/HMS-only phones (a primary target here) have none.
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 

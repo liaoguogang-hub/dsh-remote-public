@@ -16,11 +16,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.rememberLauncherForActivityResult
 import com.dsh.remote.ui.ChatScreen
 import com.dsh.remote.ui.ChatViewModel
 import com.dsh.remote.ui.DshTheme
 import com.dsh.remote.ui.Screen
 import com.dsh.remote.ui.HelpScreen
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.dsh.remote.ui.SetupScreen
 
 class MainActivity : ComponentActivity() {
@@ -52,6 +55,22 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val state by viewModel.state.collectAsStateWithLifecycle()
+
+            // QR pairing: the bridge shows a one-time code, the phone redeems it for a cookie.
+            // ZXing (not ML Kit) so HMS-only phones without Google Play services can scan too.
+            val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+                result.contents?.let { viewModel.pairFromQr(it) }
+            }
+            val launchScan: () -> Unit = {
+                scanLauncher.launch(
+                    ScanOptions().apply {
+                        setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                        setPrompt("对准电脑上的配对二维码")
+                        setBeepEnabled(false)
+                        setOrientationLocked(false)
+                    },
+                )
+            }
 
             // Back from help / the address screen returns instead of exiting the app.
             BackHandler(enabled = state.screen != Screen.Chat) {
@@ -85,6 +104,8 @@ class MainActivity : ComponentActivity() {
                             onConnect = { viewModel.connect(state.mode) },
                             onDismissError = viewModel::dismissError,
                             onOpenHelp = viewModel::openHelp,
+                            onScanQr = launchScan,
+                            onPairManual = viewModel::pairFromCode,
                         )
 
                         Screen.Help -> HelpScreen(onBack = { viewModel.backToChat() })
@@ -119,6 +140,8 @@ class MainActivity : ComponentActivity() {
                             onSessionArchiveToggle = viewModel::setSessionArchived,
                             onSessionRename = viewModel::renameSession,
                             onOpenHelp = viewModel::openHelp,
+                            onScanQr = launchScan,
+                            onPairManual = viewModel::pairFromCode,
                         )
                     }
                 }

@@ -22,6 +22,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -63,6 +67,8 @@ fun NetworkForm(
     onConnect: () -> Unit,
     onDismissError: () -> Unit,
     onOpenHelp: () -> Unit,
+    onScanQr: () -> Unit,
+    onPairManual: (String, String) -> Unit,
 ) {
     Text(
         text = "网络连接方式",
@@ -149,15 +155,68 @@ fun NetworkForm(
 
     Spacer(Modifier.height(8.dp))
 
+    var manualOpen by remember { mutableStateOf(false) }
+    var manualUrl by remember { mutableStateOf(urlDraft) }
+    var manualCode by remember { mutableStateOf("") }
+
     Row(verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onOpenHelp) {
-            Text("遇到问题？看帮助", fontSize = 11.sp)
+        TextButton(onClick = onScanQr) {
+            Text("扫码配对", fontSize = 12.sp)
         }
-        Spacer(Modifier.weight(1f))
-        Text(
-            "局域网最快；外网需 ngrok 或 cloudflared",
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        TextButton(onClick = {
+            manualUrl = urlDraft
+            manualOpen = true
+        }) {
+            Text("手动输入", fontSize = 11.sp)
+        }
+        TextButton(onClick = onOpenHelp) {
+            Text("帮助", fontSize = 11.sp)
+        }
+    }
+
+    if (manualOpen) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { manualOpen = false },
+            title = { Text("手动配对", fontSize = 15.sp) },
+            text = {
+                Column {
+                    Text(
+                        "在电脑上执行 dsh-remote qr 打开配对页，把页面上的地址和配对码填到这里。",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = manualUrl,
+                        onValueChange = { manualUrl = it },
+                        label = { Text("地址") },
+                        placeholder = { Text("http://192.168.1.23:6300") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = manualCode,
+                        onValueChange = { manualCode = it.uppercase() },
+                        label = { Text("配对码") },
+                        placeholder = { Text("10 位字母数字") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        manualOpen = false
+                        onPairManual(manualUrl, manualCode)
+                    },
+                    enabled = manualUrl.isNotBlank() && manualCode.isNotBlank(),
+                ) { Text("配对") }
+            },
+            dismissButton = {
+                TextButton(onClick = { manualOpen = false }) { Text("取消") }
+            },
         )
     }
 

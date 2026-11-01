@@ -189,6 +189,41 @@ class DshClient {
         }
     }.getOrDefault(false)
 
+    /**
+     * Redeem a one-time pairing code for the browser cookie.
+     *
+     * The QR code carries `{v,u,c,e}` where `u` is the base URL to talk to and `c` is a code that
+     * expires in ~10 minutes and burns on first use. Redeeming over HTTPS on that same base URL is
+     * what turns a photographed code into nothing useful.
+     */
+    suspend fun redeemPairing(base: String, code: String): String = withContext(Dispatchers.IO) {
+        val root = normalizeBase(base)
+        val body = JSONObject().put("code", code).toString()
+        val req = Request.Builder()
+            .url("$root/_dsh-remote/pair/redeem")
+            .post(body.toRequestBody("application/json".toMediaType()))
+            .build()
+        http.newCall(req).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) {
+                val reason = runCatching { JSONObject(text).optString("reason") }.getOrDefault("")
+                throw IllegalStateException(
+                    when (reason) {
+                        "expired" -> "配对码已过期，请在电脑上重新打开配对页"
+                        "unknown" -> "配对码无效或已被使用"
+                        else -> "配对失败（HTTP ${resp.code}）"
+                    },
+                )
+            }
+            val doc = JSONObject(text)
+            val cookie = doc.optString("cookie")
+            if (cookie.isEmpty()) throw IllegalStateException("电脑没有返回凭据")
+            baseUrl = root
+            this@DshClient.cookie = cookie
+            cookie
+        }
+    }
+
     /** Cheap liveness/auth probe: throws when the stored cookie is no longer accepted. */
     suspend fun ping() {
         rpc("session/list", JSONObject().put("_request", JSONObject()))

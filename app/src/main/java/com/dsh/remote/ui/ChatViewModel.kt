@@ -348,6 +348,63 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(cookieDraft = value, error = null) }
     }
 
+    /**
+     * Complete a QR pairing handshake.
+     *
+     * Payload comes from the bridge's pairing page: `{"v":1,"u":"<base url>","c":"<code>","e":<ms>}`.
+     * The code is single-use and short-lived, so redeeming immediately is the whole point; on
+     * success the returned cookie is persisted and the app connects straight away.
+     */
+    /** Manual fallback for a broken/absent camera: address + code typed by hand. */
+    fun pairFromCode(url: String, code: String) {
+        val base = url.trim()
+        val c = code.trim().uppercase()
+        if (base.isEmpty() || c.isEmpty()) {
+            return _state.update { it.copy(error = "地址和配对码都要填") }
+        }
+        pairFromQr(org.json.JSONObject().put("v", 1).put("u", base).put("c", c).put("e", 0L).toString())
+    }
+
+    fun pairFromQr(raw: String) {
+        val parsed = runCatching { JSONObject(raw) }.getOrNull()
+            ?: return _state.update { it.copy(error = "二维码内容无法识别") }
+        val url = parsed.optString("u").trim()
+        val code = parsed.optString("c").trim()
+        if (url.isEmpty() || code.isEmpty()) {
+            return _state.update { it.copy(error = "这不是 DSH Remote 的配对码") }
+        }
+        val expiresAt = parsed.optLong("e", 0L)
+        if (expiresAt > 0 && System.currentTimeMillis() > expiresAt) {
+            return _state.update { it.copy(error = "配对码已过期，请在电脑上重新打开配对页") }
+        }
+        if (_state.value.connecting) return
+
+        viewModelScope.launch {
+            _state.update { it.copy(connecting = true, error = null, mode = ConnectMode.Custom, urlDraft = url) }
+            try {
+                val cookie = client.redeemPairing(url, code)
+                // Persist exactly what a manual connection would: mode, address, cookie override.
+                settings.mode = ConnectMode.Custom
+                settings.remember(ConnectMode.Custom, url, "")
+                settings.addCustomUrl(url)
+                settings.customCookie = cookie
+                settings.saveCookie(url, cookie)
+                _state.update {
+                    it.copy(
+                        cookieDraft = cookie,
+                        urlDraft = url,
+                        tokenDraft = "",
+                        connecting = false,
+                        error = null,
+                    )
+                }
+                connect(ConnectMode.Custom)
+            } catch (t: Throwable) {
+                _state.update { it.copy(connecting = false, error = t.message ?: "配对失败") }
+            }
+        }
+    }
+
     fun connect(mode: ConnectMode) {
         if (_state.value.connecting) return
         val url = settings.url(mode).let { stored ->
