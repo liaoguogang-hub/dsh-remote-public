@@ -28,7 +28,7 @@ Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 手机端不通过 npm 分发——npm 包 `dsh-remote-hub` 是电脑侧的 DSH 插件，两者配合使用：
 
 ```
-电脑：dsh plugin --profile desktop add dsh-remote-hub   → 起桥接 / 开隧道 / 签 Cookie
+电脑：dsh plugin --profile desktop add dsh-remote-hub@0.4.2 → 起桥接 / 开隧道 / 签 Cookie
 手机：装上面这个 APK → 填电脑给出的地址与 Cookie → 连接
 ```
 
@@ -184,8 +184,8 @@ node mint.mjs "127.0.0.1:1815" 30              # 签发 30 天 Cookie
 ```bash
 # 从 NPM 安装（推荐，会出现在 DSH 内的「插件中心」）
 # https://www.npmjs.com/package/dsh-remote-hub
-dsh plugin --profile desktop add dsh-remote-hub
-dsh plugin --profile web add dsh-remote-hub      # web profile 同样可用
+dsh plugin --profile desktop add dsh-remote-hub@0.4.2
+dsh plugin --profile web add dsh-remote-hub@0.4.2      # web profile 同样可用
 
 # 或直接从本仓库源码安装（不经过 NPM）
 dsh plugin --profile web add github:liaoguogang-hub/dsh-remote-public
@@ -222,6 +222,10 @@ dsh-remote start      # 不开 DSH 也能单独前台跑（Ctrl+C 退出）
 > 公网隧道受网络影响：`api.trycloudflare.com` 不可达时插件会跳过公网、只给局域网地址，
 > 并在 `status.json` 里写明原因，不会假装成功。
 
+> **安装时必须带版本号**（如 `@0.4.1`）。pnpm 11 默认开启 `minimumReleaseAge` 安全策略，
+> 新发布的版本在一段时间内不会被 `@latest` 解析到，会**回退安装到很旧的版本**（0.1.0 没有扫码配对，
+> 表现就是「扫码页打不开」）。显式写版本号可绕过该策略。
+
 ### 装完之后
 
 插件随 DSH 启动自动工作，**不需要手动跑 connect.cmd**；装的时候没有提示是正常的，日志里会出现：
@@ -238,7 +242,7 @@ dsh-remote: ready — 手机端扫码：dsh-remote qr（或浏览器打开 http:
 ### 升级插件（重要：必须完全重启 DSH）
 
 ```bash
-dsh plugin --profile desktop add dsh-remote-hub     # 或 --profile web
+dsh plugin --profile desktop add dsh-remote-hub@0.4.2     # 或 --profile web
 ```
 
 **升级后请完全退出 DSH 再重新打开，不要只靠插件热重载。** 原因是旧版本的桥接监听可能不会被热重载回收，

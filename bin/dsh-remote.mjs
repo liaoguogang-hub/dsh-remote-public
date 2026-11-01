@@ -23,6 +23,7 @@ import { credentialsPath, mintCookie, readSigningSecret } from '../lib/cookie.js
 import { listeningPorts, probePort } from '../lib/discover.js'
 import { findCloudflared, findNgrok } from '../lib/tunnel.js'
 import { CONNECT_FILE, STATUS_FILE, readStatus, start } from '../lib/supervisor.js'
+import { version as VERSION } from '../lib/index.js'
 
 const args = process.argv.slice(2)
 const command = args[0] || 'status'
@@ -42,6 +43,7 @@ function printStatus() {
   const remaining = status.cookieExpiresAt ? Math.round((status.cookieExpiresAt - Date.now()) / 86400000) : null
   console.log('')
   console.log('  DSH Remote 状态')
+  console.log(`  插件版本     v${VERSION}`)
   console.log('  ' + '-'.repeat(52))
   console.log(`  局域网地址   ${status.lan?.url ?? '(未检测到局域网 IP)'}`)
   console.log(`  公网地址     ${status.public?.url ?? `无（${status.public?.note ?? '未开启'}）`}`)
@@ -58,6 +60,7 @@ function printStatus() {
   } else if (status.error) {
     console.log(`  错误   ${status.error}`)
   }
+  console.log(`  ✔ 插件版本        v${VERSION}`)
   console.log('  ' + '-'.repeat(52))
   console.log('')
 }
