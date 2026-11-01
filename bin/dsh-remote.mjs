@@ -141,7 +141,8 @@ async function openPairPage(bridgePort) {
     return
   }
   bridgePort = livePort
-  const page = `http://127.0.0.1:${bridgePort}/_dsh-remote/pair`
+  const asPublic = (process.env.DSH_REMOTE_VIEW === 'public') ? '?as=public' : ''
+  const page = `http://127.0.0.1:${bridgePort}/_dsh-remote/pair${asPublic}`
   console.log('')
   console.log('  配对页：', page)
   console.log('  手机点右上角扫码按钮，扫这个二维码即可（10 分钟内有效，用一次作废）')
@@ -263,6 +264,8 @@ async function main() {
       break
     case 'start': {
       const wantOpen = process.argv.includes('--open')
+      // Which build is asking? The public launcher must not display the self-use relay.
+      const view = process.env.DSH_REMOTE_VIEW === 'public' ? 'public' : 'self'
       const wantRestart = process.argv.includes('--restart')
       // Default for the double-click launchers: if a bridge is already running, just report it.
       // Never replace another launcher's bridge implicitly — the two builds (public / self-use)
@@ -279,7 +282,13 @@ async function main() {
           console.log('')
           console.log(`  已在运行的桥接：127.0.0.1:${port}（${live.runtime === 'electron' ? '由 DSH 托管' : '独立进程'}）`)
           if (st?.lan?.url) console.log(`  DSH 地址（局域网）： ${st.lan.url}`)
-          if (st?.public?.url) console.log(`  DSH 地址（公网）  ： ${st.public.url}`)
+          if (st?.public?.url) {
+            // Public view shows the tunnel only; the relay belongs to the self-use setup.
+            const shown = view === 'public'
+              ? (st?.tunnel?.url ?? (st?.public?.kind === 'relay' ? '' : st.public.url))
+              : st.public.url
+            if (shown) console.log(`  DSH 地址（公网）  ： ${shown}`)
+          }
           console.log(`  配对页： http://127.0.0.1:${port}/_dsh-remote/pair`)
           console.log('')
           console.log('  （复用它，不重启；要换成当前目录这套配置，先 dsh-remote stop 再运行）')

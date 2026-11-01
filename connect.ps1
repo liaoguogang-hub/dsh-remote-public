@@ -48,6 +48,8 @@ Say '============================  DSH Remote 一键连接  ====================
 # Public build: never advertise a self-hosted relay. A DSH_REMOTE_PUBLIC_URL left over from a
 # self-use setup would otherwise leak into this launcher and the public APK would show it too.
 $env:DSH_REMOTE_PUBLIC_URL = ''
+# Public build view: never show/emit the self-use relay in addresses or the QR payload.
+$env:DSH_REMOTE_VIEW = 'public'
 
 $node = Find-Node
 if (-not $node) {

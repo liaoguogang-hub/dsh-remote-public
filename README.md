@@ -28,7 +28,7 @@ Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 手机端不通过 npm 分发——npm 包 `dsh-remote-hub` 是电脑侧的 DSH 插件，两者配合使用：
 
 ```
-电脑：dsh plugin --profile desktop add dsh-remote-hub@0.4.4 --registry=https://registry.npmjs.org → 起桥接 / 开隧道 / 签 Cookie
+电脑：dsh plugin --profile desktop add dsh-remote-hub@0.4.5 --registry=https://registry.npmjs.org → 起桥接 / 开隧道 / 签 Cookie
 手机：装上面这个 APK → 填电脑给出的地址与 Cookie → 连接
 ```
 
@@ -184,8 +184,8 @@ node mint.mjs "127.0.0.1:1815" 30              # 签发 30 天 Cookie
 ```bash
 # 从 NPM 安装（推荐，会出现在 DSH 内的「插件中心」）
 # https://www.npmjs.com/package/dsh-remote-hub
-dsh plugin --profile desktop add dsh-remote-hub@0.4.4 --registry=https://registry.npmjs.org
-dsh plugin --profile web add dsh-remote-hub@0.4.4 --registry=https://registry.npmjs.org
+dsh plugin --profile desktop add dsh-remote-hub@0.4.5 --registry=https://registry.npmjs.org
+dsh plugin --profile web add dsh-remote-hub@0.4.5 --registry=https://registry.npmjs.org
 
 # 或直接从本仓库源码安装（不经过 NPM）
 dsh plugin --profile web add github:liaoguogang-hub/dsh-remote-public
@@ -246,7 +246,7 @@ dsh-remote: ready — 手机端扫码：dsh-remote qr（或浏览器打开 http:
 ### 升级插件（重要：必须完全重启 DSH）
 
 ```bash
-dsh plugin --profile desktop add dsh-remote-hub@0.4.4 --registry=https://registry.npmjs.org
+dsh plugin --profile desktop add dsh-remote-hub@0.4.5 --registry=https://registry.npmjs.org
 # web profile 把 desktop 换成 web
 
 ```
