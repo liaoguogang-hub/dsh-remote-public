@@ -1,11 +1,17 @@
-feat(app): 帮助页精简 + 免费隧道风险醒目提示 + 图片可放大（4.21.0）
+fix(plugin): connect.cmd 打开的二维码页可能是死链（0.3.2）
 
-- 删除 connect.ps1 教程、Cookie/Token 来源、三步连上等冗长段落（与他人重复）
-- 新增醒目警示卡「免费隧道每次重启地址都会变」，明确说明这就是要注册 ngrok 的原因
-- ngrok 注册压到 3 步 + 一句"connect.cmd 会问一次域名并记住"
-- 常见问题精简为 3 条
-- 帮助内图片可点击 / 「查看大图」按钮打开全屏覆盖层，支持双指缩放与双击放大
-  （用同窗口覆盖层而非 Dialog：Dialog 是独立窗口，无障碍工具与测试都看不到）
+现象：双击 connect.cmd / dsh-remote start --open 后浏览器打开 http://127.0.0.1:2839/... 打不开。
 
-真机验证：页面含 扫码配对 / 地址怎么选 / 免费隧道每次重启地址都会变 / 注册 ngrok / 常见问题；
-connect.ps1 与 三步连上 已不存在；点「查看大图」后出现 "ngrok 后台要点（放大）"、"双指缩放"、"关闭大图"。
+根因：
+- status.json 是上次运行（或测试）留下的陈旧文件，写着旧端口 2839
+- 桥接已在 6300 运行，走"采纳已有桥接"分支时直接返回了 readStatus()，于是 CLI 用陈旧端口拼 URL
+
+修复：
+- 采纳分支改为以 /_dsh-remote/health 的实时数据重建 status（端口/authority/上游），并写回
+- openPairPage / qr 命令在打开前都先探 health，自动在 [status 端口, 6300] 里找活着的桥接
+- 没有活桥接时不再打开死链，而是提示先运行 dsh-remote start / 双击 connect.cmd
+
+验证：
+- status 被人为改成 2839 → start 采纳 6300 并纠正 status，打印正确配对页
+- 无桥接时 qr 输出"桥接还没运行"
+- 正常 start --open：监听 6300、打印配对页、/pair 返回 200

@@ -14,6 +14,7 @@
  */
 
 import fs from 'node:fs'
+import http from 'node:http'
 import { execFile } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
@@ -69,8 +70,59 @@ function openBrowser(url) {
   })
 }
 
-/** Point the browser at the running bridge's pairing page (port comes from status, not a constant). */
+/** Is a live dsh-remote bridge answering on this port? */
+function bridgeHealthy(port, timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    const req = http.request(
+      { host: '127.0.0.1', port, path: '/_dsh-remote/health', method: 'GET', timeout: timeoutMs },
+      (res) => {
+        const chunks = []
+        res.on('data', (c) => chunks.push(c))
+        res.on('end', () => {
+          try {
+            const doc = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+            resolve(doc?.ok ? doc : null)
+          } catch {
+            resolve(null)
+          }
+        })
+      },
+    )
+    req.on('error', () => resolve(null))
+    req.on('timeout', () => {
+      req.destroy()
+      resolve(null)
+    })
+    req.end()
+  })
+}
+
+/**
+ * Point the browser at the running bridge's pairing page.
+ *
+ * The port is verified against the bridge's own health route first: status.json can be stale after
+ * a crashed run or a test on another port, and opening a dead URL looks like "the QR page is broken".
+ */
+async function resolveLiveBridge(preferred) {
+  const candidates = [preferred, 6300, readStatus()?.bridgePort]
+    .filter((p, i, arr) => Number.isInteger(p) && p > 0 && arr.indexOf(p) === i)
+  for (const port of candidates) {
+    // eslint-disable-next-line no-await-in-loop
+    const live = await bridgeHealthy(port)
+    if (live) return Number(live.bridgePort) || port
+  }
+  return null
+}
+
 async function openPairPage(bridgePort) {
+  const livePort = await resolveLiveBridge(bridgePort)
+  if (!livePort) {
+    console.log('')
+    console.log('  找不到正在运行的桥接：先运行 dsh-remote start，或双击 connect.cmd')
+    console.log('')
+    return
+  }
+  bridgePort = livePort
   const page = `http://127.0.0.1:${bridgePort}/_dsh-remote/pair`
   console.log('')
   console.log('  配对页：', page)
@@ -81,7 +133,13 @@ async function openPairPage(bridgePort) {
 
 async function qrCommand() {
   const status = readStatus()
-  const port = status?.bridgePort ?? Number(process.env.DSH_REMOTE_PORT || 6300)
+  const port = await resolveLiveBridge(status?.bridgePort ?? Number(process.env.DSH_REMOTE_PORT || 6300))
+  if (!port) {
+    console.log('')
+    console.log('  桥接还没运行：先执行 dsh-remote start --open（或双击 connect.cmd）')
+    console.log('')
+    return
+  }
   const page = `http://127.0.0.1:${port}/_dsh-remote/pair`
   console.log('')
   console.log('  配对页：', page)
