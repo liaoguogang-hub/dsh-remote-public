@@ -1,16 +1,19 @@
-fix: 恢复固定 authority（Cookie 跨重启存活）+ 401 指纹探测 + 端口占用自愈（插件 0.3.0 / APK 4.20.1）
+fix(plugin): 端口回退如实上报 + 识别/采纳已有桥接 + 热重载回收（0.3.1）
 
-根因（在另一台机器上暴露）：
-- 把 authority 绑到「探测到的端口」后，每次 DSH 重启端口变化 → Cookie audience 变化 → 手机旧凭据失效
-- 实测证明 DSH 校验的是「Cookie.authority == Host」，不是「Host == 自身端口」，所以固定 1815 才对
+问题（另一台机器）：
+- 旧版本桥接（0.1.0，无配对路由）被插件热重载后仍占着 6300
+- 新实例绑定失败后用 listenPort:0 回退，但没读回真实端口 → bridgePort=0、lan.url 变成 http://ip:0
+- 用户只能手改 profile 里的 port 才恢复
 
-插件：
-- discover.js: 无 Cookie 的 401 指纹探测（dsh web authentication required），摆脱 200 误判
-- supervisor.js: 桥接先起、后台等宿主 Web 服务（≤2min）；6300 被占自动改绑临时端口并如实上报
-- bridge.js: 新增 /_dsh-remote/health 便于识别已有桥接
-- index.js: 启动日志打印下一步（dsh-remote qr / connect.cmd），解决安装后无提示
+修复：
+- bridge.js: 绑定后从 server.address().port 读回真实端口；health 增加 pairing 能力标记
+- supervisor.js: 绑定冲突时先探测 /_dsh-remote/health
+  · 是支持配对的本插件桥接 → 直接采纳，不再重复开隧道
+  · 是旧版桥接（无配对）或别的程序 → 自动改绑临时端口并打印真实端口
+- supervisor.js: globalThis 实例注册表，插件热重载时先关闭同端口的上一实例
+- 修复 tunnelRef 引用顺序（注册表 disposer 在 tunnel 创建前被引用会 TDZ）
 
-APK：
-- 401/unauthorized 时提示「凭据已失效，请重新扫码」
-
-验证：同一旧 Cookie 在桥接重启前后均 200；指纹探测只命中真实 DSH（3081/13812），不再误判
+验证（三场景）：
+1. 端口空闲 → 正常监听 6300
+2. 已有本插件桥接 → "adopting it"，不重复启动
+3. 旧版桥接占端口 → 换到 2839 并如实写入 status/日志
