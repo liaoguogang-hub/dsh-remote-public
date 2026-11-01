@@ -195,7 +195,17 @@ class DshClient {
      * Pairing result. `lan` is a list because one machine can expose several private adapters and
      * only one of them is reachable from the phone; the caller probes them in order.
      */
-    data class PairingResult(val lan: List<String>, val public: String?, val cookie: String)
+    data class PairingResult(
+        val lan: List<String>,
+        /** Self-hosted relay (Aliyun/Caddy + reverse SSH), when the PC is configured with one. */
+        val relay: String?,
+        /** Auto tunnel (ngrok / cloudflared), when one is available. */
+        val tunnel: String?,
+        val cookie: String,
+    ) {
+        /** Best single public address, for the "just connect" path. */
+        val preferredPublic: String? get() = relay ?: tunnel
+    }
 
     /**
      * Redeem a one-time pairing code for the browser cookie.
@@ -233,10 +243,12 @@ class DshClient {
                 }
                 is String -> node.takeIf { it.isNotBlank() }?.let(lanList::add)
             }
-            val pub = doc.optString("public").takeIf { it.isNotBlank() }
+            val relay = doc.optString("relay").takeIf { it.isNotBlank() }
+            val tunnel = doc.optString("tunnel").takeIf { it.isNotBlank() }
+                ?: doc.optString("public").takeIf { it.isNotBlank() && it != relay }
             this@DshClient.cookie = cookie
-            baseUrl = lanList.firstOrNull() ?: pub ?: root
-            PairingResult(lanList, pub, cookie)
+            baseUrl = lanList.firstOrNull() ?: relay ?: tunnel ?: root
+            PairingResult(lanList, relay, tunnel, cookie)
         }
     }
 

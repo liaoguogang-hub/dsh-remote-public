@@ -400,9 +400,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
             is String -> node.trim().takeIf { it.isNotEmpty() }?.let(lanList::add)
         }
-        val pub = parsed.optString("u").trim().ifEmpty { null }
+        val relayInQr = parsed.optString("r").trim().ifEmpty { null }
+        val tunnelInQr = parsed.optString("u").trim().ifEmpty { null }
         val code = parsed.optString("c").trim()
-        val bootstrap = lanList.firstOrNull() ?: pub
+        val bootstrap = lanList.firstOrNull() ?: relayInQr ?: tunnelInQr
         if (bootstrap == null || code.isEmpty()) {
             return _state.update { it.copy(error = "这不是 DSH Remote 的配对码") }
         }
@@ -417,18 +418,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val result = client.redeemPairing(bootstrap, code)
                 val lanCandidates = (result.lan.ifEmpty { lanList }).distinct()
-                val pubUrl = result.public ?: pub
+                val relayUrl = result.relay ?: relayInQr
+                val tunnelUrl = result.tunnel ?: tunnelInQr
 
-                // Persist both tabs: 局域网 and 公网. Pick the LAN address that actually answers —
-                // a machine often has several private adapters and only one reaches the phone.
+                // Persist what the QR carries, one transport per tab:
+                //   局域网   <- LAN (first one that actually answers)
+                //   ngrok    <- auto tunnel
+                //   自定义   <- self-hosted relay, if the PC advertises one
                 val lanUrl = pickLan(lanCandidates)
                 lanUrl?.let { settings.remember(ConnectMode.Lan, it, "") }
-                pubUrl?.let { settings.remember(ConnectMode.Tunnel, it, "") }
+                tunnelUrl?.let { settings.remember(ConnectMode.Tunnel, it, "") }
+                relayUrl?.let {
+                    settings.remember(ConnectMode.Custom, it, "")
+                    settings.addCustomUrl(it)
+                }
                 settings.customCookie = result.cookie
-                (lanUrl ?: pubUrl)?.let { settings.saveCookie(it, result.cookie) }
+                (lanUrl ?: relayUrl ?: tunnelUrl)?.let { settings.saveCookie(it, result.cookie) }
 
-                // Prefer the LAN transport when it answers; otherwise go through the tunnel.
-                val target = pickTransport(lanUrl, pubUrl)
+                // LAN first (fastest), then the relay (usually the owner's own server), then tunnel.
+                val target = pickTransport(lanUrl, relayUrl ?: tunnelUrl)
                 settings.mode = target
                 _state.update {
                     it.copy(

@@ -1,14 +1,21 @@
-feat(plugin): doctor 增加端口占用者与公网地址类型诊断（0.3.4）
+feat: 一次扫码给出局域网/中转/隧道三条路（插件 0.4.0 / APK 4.21.2、4.22.2）
 
-另一台/本机反复出现「扫码拿到 ngrok 而不是阿里云中转」，根因有两个且都难自证：
-1) 6300 被旧版 lan-proxy.mjs（看门狗拉起）占用 → 配对页其实不是本插件在服务
-2) 未配置 publicUrl → 插件如实报告 ngrok 隧道地址
+背景：自用版走阿里云中转，但插件此前把 publicUrl 当作「替代隧道」，
+导致扫码只能拿到一个公网地址，自用版无法同时保留中转与 ngrok。
 
-改进：
-- start 在端口被非本插件进程占用时，打印占用者 PID 与命令行
-- doctor 新增：桥接端口归属（是否本插件、是否支持 pairing）、公网地址类型（自建中转/ngrok/…）
-  以及「设置了 DSH_REMOTE_PUBLIC_URL 但当前桥接未采用（需重启）」的提示
+插件：
+- relay 与 auto tunnel 并存上报：status 增加 relay/tunnel 两个字段，
+  public 仍表示「首选公网」（relay 优先）
+- 配对载荷 v3：{v:3, l:[局域网...], r:中转, u:隧道, c:码, e:过期}
+- redeem 返回 {lan[], relay, tunnel, public, cookie}；配对页分别显示「局域网/中转/隧道」
+- 隧道不再因 publicUrl 而跳过（自用版可同时保留 ngrok 作为备用）
 
-实测：doctor 输出
-  ✔ 桥接端口 6300（本插件，pairing=true）
-  ▲ 公网地址 https://47.254.134.142（自建中转）
+APK：
+- PairingResult 增加 relay/tunnel 与 preferredPublic
+- 公共版映射：局域网→Lan，隧道→Tunnel(ngrok档)，中转→Custom
+- 自用版映射（按要求）：局域网→Lan，中转→Cloudflare档，ngrok→自定义档
+- 连接顺序：局域网（探测可达）→ 中转 → 隧道
+
+实测（本机，publicUrl=阿里云）：
+  lan=[http://192.168.0.129:6300]  relay=https://47.254.134.142
+  tunnel=https://repackage-shading-sublease.ngrok-free.dev  cookie=224
