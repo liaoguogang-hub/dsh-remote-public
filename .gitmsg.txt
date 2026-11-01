@@ -1,19 +1,7 @@
-fix(plugin): 端口回退如实上报 + 识别/采纳已有桥接 + 热重载回收（0.3.1）
+docs: 补「升级插件必须完全重启 DSH」说明
 
-问题（另一台机器）：
-- 旧版本桥接（0.1.0，无配对路由）被插件热重载后仍占着 6300
-- 新实例绑定失败后用 listenPort:0 回退，但没读回真实端口 → bridgePort=0、lan.url 变成 http://ip:0
-- 用户只能手改 profile 里的 port 才恢复
+记录 0.3.1 之前的两个真实故障与自愈手段：
+- 配对页打不开/乱码 = 端口被旧版桥接占着（热重载没回收监听）
+- bridgePort=0、地址形如 http://ip:0 = 0.3.0 及更早的端口回退 bug
 
-修复：
-- bridge.js: 绑定后从 server.address().port 读回真实端口；health 增加 pairing 能力标记
-- supervisor.js: 绑定冲突时先探测 /_dsh-remote/health
-  · 是支持配对的本插件桥接 → 直接采纳，不再重复开隧道
-  · 是旧版桥接（无配对）或别的程序 → 自动改绑临时端口并打印真实端口
-- supervisor.js: globalThis 实例注册表，插件热重载时先关闭同端口的上一实例
-- 修复 tunnelRef 引用顺序（注册表 disposer 在 tunnel 创建前被引用会 TDZ）
-
-验证（三场景）：
-1. 端口空闲 → 正常监听 6300
-2. 已有本插件桥接 → "adopting it"，不重复启动
-3. 旧版桥接占端口 → 换到 2839 并如实写入 status/日志
+同时说明 0.3.1 的 health 探测/采纳/换端口行为，以及"以 status.json 的真实端口为准，不必手改配置"。
