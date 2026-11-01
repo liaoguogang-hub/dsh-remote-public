@@ -42,7 +42,7 @@ curl -s https://registry.npmjs.org/dsh-remote-hub | python -c "import json,sys;d
 pnpm 11 的 `minimumReleaseAge` 会让 `dsh plugin add dsh-remote-hub` / `@latest` 在新版本发布后的一段时间内
 **解析到旧版本**（实测装到 0.1.0，没有扫码配对 → 「扫码页打不开」）。所以：
 
-1. **同步文档里的精确版本号**：`README.md` 所有 `dsh plugin … add dsh-remote-hub@<version>` 改成新版本；
+1. **同步文档里的精确版本号**：`README.md` 所有 `dsh plugin … add dsh-remote-hub@<version>` 改成新版本（**并保留 `--registry=https://registry.npmjs.org`**，国内镜像会滞后）；
 2. **弃用旧版本**，让装到的人看到警告：
 
 ```bash
@@ -53,7 +53,7 @@ npm view dsh-remote-hub@<old> deprecated --registry=https://registry.npmjs.org  
 3. 用**全新 profile** 验证一次真实安装（不要用已有环境）：
 
 ```bash
-dsh plugin --profile zzcheck add dsh-remote-hub@<version>
+dsh plugin --profile zzcheck add dsh-remote-hub@<version> --registry=https://registry.npmjs.org
 python -c "import json;print(json.load(open(r'C:\Users\%USERNAME%\.dsh\profiles\zzcheck\node_modules\dsh-remote-hub\package.json'))['version'])"
 dsh --profile zzcheck --dump-config | grep -c dsh-remote-hub    # 应 >= 1，说明会被加载
 ```
@@ -192,7 +192,8 @@ app/src/main/java/com/dsh/remote/
 | 端口占用 | `EADDRINUSE`、`bridgePort: 0` | 0.3.1+ 会自动采纳/换端口；看 `dsh-remote doctor` |
 | 固定 authority 假设 | 别的机器 401 | 保持 `authority: 127.0.0.1:1815` 固定（DSH 校验的是 Cookie.authority == Host），**不要**改成跟随端口，否则重启即失效 |
 | 环境变量串台 | 公共版也显示自建中转 | 公共版 `connect.ps1` 清空 `DSH_REMOTE_PUBLIC_URL`；两个 `connect.ps1` 都传 `--restart` |
-| **`dsh plugin add` 装到旧版本** | 用户装完是 0.1.0，扫码页打不开 | pnpm 11 的 `minimumReleaseAge` 把新版本挡在窗口外，`@latest` 也会回退；**文档安装命令必须写精确版本**，发布后同步更新 README |
+| **`dsh plugin add` 装到旧版本** | 用户装完是 0.1.0，扫码页打不开 | pnpm 11 的 `minimumReleaseAge` 把新版本挡在窗口外，`@latest` 也会回退 |
+| **国内镜像没同步** | `ERR_PNPM_NO_MATCHING_VERSION` | profile 默认 registry 是 `registry.npmmirror.com`，新版本要等同步；安装命令加 `--registry=https://registry.npmjs.org` |
 | `.cmd` 编码 | 窗口一闪而过 | `connect.cmd` 纯 ASCII + CRLF；`connect.ps1` 必须 UTF-8 **带 BOM** |
 | 市场站缓存 | 详情页看不到 README 的下载区 | 放弃依赖它，改成 Release 描述里带下载链接 |
 | 临时文件误提交 | 仓库多出 `.gitmsg.txt` | 已加入 `.gitignore` |
