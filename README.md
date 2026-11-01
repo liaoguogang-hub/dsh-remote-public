@@ -313,3 +313,7 @@ dsh-remote qr
 | GET | `/_dsh-remote/pair` | 配对页（二维码 HTML） |
 | GET | `/_dsh-remote/pair.svg` | 只要二维码 SVG |
 | POST | `/_dsh-remote/pair/redeem` | `{code}` → `{url, cookie}`；用过即失效 |
+
+---
+
+发版流程（版本号约定、tag 命名、发布 checklist、踩过的坑）：见 [RELEASING.md](RELEASING.md)
