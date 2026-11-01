@@ -9,6 +9,8 @@
 #   port           local bridge port the phone connects to on the LAN
 #   authority      Host header the bridge presents; the signed cookie is bound to it
 #   tunnel         "auto" (ngrok if found, else cloudflared), "off", "ngrok" or "cloudflared"
+#   publicUrl      explicit public address to advertise (a self-hosted relay, e.g. the Aliyun box).
+#                  When set, nothing is launched for the tunnel and this URL goes into the QR code.
 #   upstreamPort   pin the DSH host port; 0 means discover it automatically
 - insert:
     - id: dsh-remote
@@ -18,4 +20,5 @@
         port: 6300
         authority: '127.0.0.1:1815'
         tunnel: 'auto'
+        publicUrl: ''
         upstreamPort: 0

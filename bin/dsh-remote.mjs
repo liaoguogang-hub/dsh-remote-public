@@ -5,7 +5,7 @@
  *   dsh-remote status      show LAN URL, public URL, cookie and upstream port
  *   dsh-remote connect     print the two lines to paste into the phone
  *   dsh-remote cookie      print only the cookie
- *   dsh-remote start [--open]  run the supervisor in the foreground; --open 打印地址并打开配对页
+ *   dsh-remote start [--open] [--public-url=URL]  run the supervisor; --open 打印地址并打开配对页
  *   dsh-remote stop        ask a foreground `start` to stop (best effort, via status file)
  *   dsh-remote doctor      check every prerequisite in one pass
  *   dsh-remote qr          open the pairing page (QR) in the default browser
@@ -222,9 +222,12 @@ async function main() {
       break
     case 'start': {
       const wantOpen = process.argv.includes('--open')
+      // --public-url=https://relay.example  advertises a self-hosted relay in the QR payload.
+      const publicArg = process.argv.find((a) => a.startsWith('--public-url='))
+      const publicUrl = publicArg ? publicArg.slice('--public-url='.length) : process.env.DSH_REMOTE_PUBLIC_URL || ''
       let handle
       try {
-        handle = await start({ log: (m) => console.log(m) })
+        handle = await start({ publicUrl, log: (m) => console.log(m) })
       } catch (err) {
         // Port already taken: another bridge is serving; just show its pairing page.
         if (/EADDRINUSE/.test(String(err?.message ?? err))) {

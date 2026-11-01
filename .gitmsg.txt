@@ -1,17 +1,22 @@
-fix(plugin): connect.cmd 打开的二维码页可能是死链（0.3.2）
+feat: 支持自建中转（阿里云）进入二维码 + 内网多地址候选（插件 0.3.3 / APK 4.21.1、4.22.1）
 
-现象：双击 connect.cmd / dsh-remote start --open 后浏览器打开 http://127.0.0.1:2839/... 打不开。
+自用版走的是阿里云轻量服务器（Caddy 终止 TLS + SSH 反向隧道），
+而扫码出来的公网地址默认来自 ngrok/cloudflared，两者不是一回事。
 
-根因：
-- status.json 是上次运行（或测试）留下的陈旧文件，写着旧端口 2839
-- 桥接已在 6300 运行，走"采纳已有桥接"分支时直接返回了 readStatus()，于是 CLI 用陈旧端口拼 URL
+插件：
+- 新增配置 publicUrl（cordis.patch.yml）与 CLI 参数 --public-url / 环境变量 DSH_REMOTE_PUBLIC_URL
+- 配置后不再启动 ngrok/cloudflared，直接把该地址写进 pairing 载荷与 status（kind: relay）
+- 启动时探测该地址的 /_dsh-remote/health，status.public.reachable 记录是否真的可达
+  （中转在、但 SSH 反向隧道断了 → reachable=false 并打印警告）
 
-修复：
-- 采纳分支改为以 /_dsh-remote/health 的实时数据重建 status（端口/authority/上游），并写回
-- openPairPage / qr 命令在打开前都先探 health，自动在 [status 端口, 6300] 里找活着的桥接
-- 没有活桥接时不再打开死链，而是提示先运行 dsh-remote start / 双击 connect.cmd
+配对载荷升级到 v2：
+- l 改为内网地址数组（一台机器可能有多个私网网卡，只有一个是手机能到的）
+- u 为公网地址（自建中转或隧道）
+- 客户端逐个探测 l，选第一个可达的写入局域网档；兼容 v1 的字符串形式
 
-验证：
-- status 被人为改成 2839 → start 采纳 6300 并纠正 status，打印正确配对页
-- 无桥接时 qr 输出"桥接还没运行"
-- 正常 start --open：监听 6300、打印配对页、/pair 返回 200
+APK（公共版与自用版同源）：
+- DshClient.PairingResult.lan 改为列表，VM 用 pickLan() 逐个 TCP 探测
+- 自用版：扫到中转地址会写入「Cloudflare」档，内网写入「局域网」档
+
+验证：配置 publicUrl=https://relay.test 时，redeem 返回 lan 列表 + public=https://relay.test，
+status.public={kind:'relay',reachable:false}（example.invalid 预期不可达）。

@@ -392,11 +392,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun pairFromQr(raw: String) {
         val parsed = runCatching { JSONObject(raw) }.getOrNull()
             ?: return _state.update { it.copy(error = "二维码内容无法识别") }
-        val lan = parsed.optString("l").trim().ifEmpty { null }
-        // Backwards compatibility with the older payload that only had `u`.
+        // `l` may be a list (v2) or a single string (v1).
+        val lanList = mutableListOf<String>()
+        when (val node = parsed.opt("l")) {
+            is JSONArray -> for (i in 0 until node.length()) {
+                node.optString(i).trim().takeIf { it.isNotEmpty() }?.let(lanList::add)
+            }
+            is String -> node.trim().takeIf { it.isNotEmpty() }?.let(lanList::add)
+        }
         val pub = parsed.optString("u").trim().ifEmpty { null }
         val code = parsed.optString("c").trim()
-        val bootstrap = lan ?: pub
+        val bootstrap = lanList.firstOrNull() ?: pub
         if (bootstrap == null || code.isEmpty()) {
             return _state.update { it.copy(error = "这不是 DSH Remote 的配对码") }
         }
@@ -410,10 +416,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(connecting = true, error = null) }
             try {
                 val result = client.redeemPairing(bootstrap, code)
-                val lanUrl = result.lan ?: lan
+                val lanCandidates = (result.lan.ifEmpty { lanList }).distinct()
                 val pubUrl = result.public ?: pub
 
-                // Persist both tabs: 局域网 and ngrok. Nothing lands in 自定义 any more.
+                // Persist both tabs: 局域网 and 公网. Pick the LAN address that actually answers —
+                // a machine often has several private adapters and only one reaches the phone.
+                val lanUrl = pickLan(lanCandidates)
                 lanUrl?.let { settings.remember(ConnectMode.Lan, it, "") }
                 pubUrl?.let { settings.remember(ConnectMode.Tunnel, it, "") }
                 settings.customCookie = result.cookie
@@ -437,6 +445,14 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 _state.update { it.copy(connecting = false, error = t.message ?: "配对失败") }
             }
         }
+    }
+
+    /** First LAN candidate that answers the probe; falls back to the first one when none do. */
+    private suspend fun pickLan(candidates: List<String>): String? {
+        for (url in candidates) {
+            if (client.reachable(url)) return url
+        }
+        return candidates.firstOrNull()
     }
 
     /** LAN if it answers within the probe window, else the public tunnel, else LAN as last resort. */

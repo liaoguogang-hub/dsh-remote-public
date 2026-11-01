@@ -9,6 +9,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.Inet4Address
@@ -190,7 +191,11 @@ class DshClient {
     }.getOrDefault(false)
 
     /** What a pairing handshake yields: both transports plus the credential. */
-    data class PairingResult(val lan: String?, val public: String?, val cookie: String)
+    /**
+     * Pairing result. `lan` is a list because one machine can expose several private adapters and
+     * only one of them is reachable from the phone; the caller probes them in order.
+     */
+    data class PairingResult(val lan: List<String>, val public: String?, val cookie: String)
 
     /**
      * Redeem a one-time pairing code for the browser cookie.
@@ -221,11 +226,17 @@ class DshClient {
             val doc = JSONObject(text)
             val cookie = doc.optString("cookie")
             if (cookie.isEmpty()) throw IllegalStateException("电脑没有返回凭据")
-            val lan = doc.optString("lan").takeIf { it.isNotBlank() }
+            val lanList = mutableListOf<String>()
+            when (val node = doc.opt("lan")) {
+                is JSONArray -> for (i in 0 until node.length()) {
+                    node.optString(i).takeIf { it.isNotBlank() }?.let(lanList::add)
+                }
+                is String -> node.takeIf { it.isNotBlank() }?.let(lanList::add)
+            }
             val pub = doc.optString("public").takeIf { it.isNotBlank() }
             this@DshClient.cookie = cookie
-            baseUrl = lan ?: pub ?: root
-            PairingResult(lan, pub, cookie)
+            baseUrl = lanList.firstOrNull() ?: pub ?: root
+            PairingResult(lanList, pub, cookie)
         }
     }
 
