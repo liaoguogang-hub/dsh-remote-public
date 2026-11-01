@@ -38,6 +38,10 @@ function Find-Node {
 Say ''
 Say '============================  DSH Remote 一键连接  ============================'
 
+# Public build: never advertise a self-hosted relay. A DSH_REMOTE_PUBLIC_URL left over from a
+# self-use setup would otherwise leak into this launcher and the public APK would show it too.
+$env:DSH_REMOTE_PUBLIC_URL = ''
+
 $node = Find-Node
 if (-not $node) {
     Say '找不到 node。请先安装 Node.js，或先打开一次 DSH 桌面端（它自带 node）。' 'Red'
@@ -46,7 +50,7 @@ if (-not $node) {
 
 $cli = Join-Path $Here 'bin\dsh-remote.mjs'
 if (Test-Path $cli) {
-    & $node $cli start --open
+    & $node $cli start --open --restart
     Say ''
     Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
     return
@@ -55,7 +59,7 @@ if (Test-Path $cli) {
 # 仓库里没有 bin/：退回到已安装的插件命令，或临时用 npx 拉取（仅首次需要网络）。
 $global = Get-Command dsh-remote -ErrorAction SilentlyContinue
 if ($global) {
-    & $global.Source start --open
+    & $global.Source start --open --restart
     Say ''
     Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
     return
@@ -64,7 +68,7 @@ if ($global) {
 $npx = Get-Command npx -ErrorAction SilentlyContinue
 if ($npx) {
     Say '仓库里没有 bin\dsh-remote.mjs，改用 npx 运行已发布的插件…' 'Yellow'
-    & $npx.Source --yes dsh-remote-hub@latest start --open
+    & $npx.Source --yes dsh-remote-hub@latest start --open --restart
     Say ''
     Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
     return

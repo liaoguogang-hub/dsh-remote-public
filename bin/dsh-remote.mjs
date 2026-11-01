@@ -5,7 +5,7 @@
  *   dsh-remote status      show LAN URL, public URL, cookie and upstream port
  *   dsh-remote connect     print the two lines to paste into the phone
  *   dsh-remote cookie      print only the cookie
- *   dsh-remote start [--open] [--public-url=URL]  run the supervisor; --open 打印地址并打开配对页
+ *   dsh-remote start [--open] [--restart] [--public-url=URL]  --restart 会先停掉配置不同的旧桥接
  *   dsh-remote stop        ask a foreground `start` to stop (best effort, via status file)
  *   dsh-remote doctor      check every prerequisite in one pass
  *   dsh-remote qr          open the pairing page (QR) in the default browser
@@ -260,9 +260,26 @@ async function main() {
       break
     case 'start': {
       const wantOpen = process.argv.includes('--open')
+      const wantRestart = process.argv.includes('--restart')
       // --public-url=https://relay.example  advertises a self-hosted relay in the QR payload.
       const publicArg = process.argv.find((a) => a.startsWith('--public-url='))
       const publicUrl = publicArg ? publicArg.slice('--public-url='.length) : process.env.DSH_REMOTE_PUBLIC_URL || ''
+      // A launcher that carries its own transport config must not silently adopt a bridge started
+      // with different config (that is how a public launcher ended up advertising a self-use relay).
+      if (wantRestart) {
+        const live = await bridgeHealthy(Number(process.env.DSH_REMOTE_PORT || 6300))
+        const mismatch = live && (live.relay || null) !== (publicUrl || null)
+        if (mismatch && live.pid) {
+          console.log(`已有桥接配置不同（relay=${live.relay ?? '无'}），先停止它（PID ${live.pid}）再按当前配置启动`)
+          try {
+            process.kill(Number(live.pid))
+          } catch (err) {
+            console.log(`停止失败：${err.message}`)
+          }
+          await new Promise((r) => setTimeout(r, 1200))
+        }
+      }
+
       let handle
       try {
         handle = await start({ publicUrl, log: (m) => console.log(m) })
