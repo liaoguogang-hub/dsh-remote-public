@@ -13,6 +13,9 @@
     插件做四件事：发现 DSH 端口 → 起桥接（Host 改写）→ 开隧道或复用已有隧道 → 签 30 天 Cookie，
     然后打印局域网/公网地址与 Cookie，并打开 /_dsh-remote/pair 的二维码页。
 
+    如果已经有桥接在运行（无论是插件托管还是另一个启动器起的），本脚本只报告它的地址并打开配对页，
+    不会替换它——公共版与自用版公网配置不同，互相替换会让另一方失效。要强行接管先 dsh-remote stop。
+
     自建中转（如阿里云）可以这样传：
         $env:DSH_REMOTE_PUBLIC_URL="https://你的中转地址"
         .\connect.cmd
@@ -50,7 +53,7 @@ if (-not $node) {
 
 $cli = Join-Path $Here 'bin\dsh-remote.mjs'
 if (Test-Path $cli) {
-    & $node $cli start --open --restart
+    & $node $cli start --open --adopt
     Say ''
     Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
     return
@@ -59,7 +62,7 @@ if (Test-Path $cli) {
 # 仓库里没有 bin/：退回到已安装的插件命令，或临时用 npx 拉取（仅首次需要网络）。
 $global = Get-Command dsh-remote -ErrorAction SilentlyContinue
 if ($global) {
-    & $global.Source start --open --restart
+    & $global.Source start --open --adopt
     Say ''
     Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
     return
@@ -68,7 +71,7 @@ if ($global) {
 $npx = Get-Command npx -ErrorAction SilentlyContinue
 if ($npx) {
     Say '仓库里没有 bin\dsh-remote.mjs，改用 npx 运行已发布的插件…' 'Yellow'
-    & $npx.Source --yes dsh-remote-hub@latest start --open --restart
+    & $npx.Source --yes dsh-remote-hub@latest start --open --adopt
     Say ''
     Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
     return

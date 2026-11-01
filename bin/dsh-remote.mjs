@@ -264,9 +264,31 @@ async function main() {
     case 'start': {
       const wantOpen = process.argv.includes('--open')
       const wantRestart = process.argv.includes('--restart')
+      // Default for the double-click launchers: if a bridge is already running, just report it.
+      // Never replace another launcher's bridge implicitly — the two builds (public / self-use)
+      // differ in what they advertise, and silently swapping it makes the other one stop working.
+      const wantAdopt = process.argv.includes('--adopt')
       // --public-url=https://relay.example  advertises a self-hosted relay in the QR payload.
       const publicArg = process.argv.find((a) => a.startsWith('--public-url='))
       const publicUrl = publicArg ? publicArg.slice('--public-url='.length) : process.env.DSH_REMOTE_PUBLIC_URL || ''
+      if (wantAdopt) {
+        const live = await bridgeHealthy(Number(process.env.DSH_REMOTE_PORT || 6300))
+        if (live) {
+          const port = Number(live.bridgePort) || 6300
+          const st = readStatus() ?? {}
+          console.log('')
+          console.log(`  已在运行的桥接：127.0.0.1:${port}（${live.runtime === 'electron' ? '由 DSH 托管' : '独立进程'}）`)
+          if (st?.lan?.url) console.log(`  DSH 地址（局域网）： ${st.lan.url}`)
+          if (st?.public?.url) console.log(`  DSH 地址（公网）  ： ${st.public.url}`)
+          console.log(`  配对页： http://127.0.0.1:${port}/_dsh-remote/pair`)
+          console.log('')
+          console.log('  （复用它，不重启；要换成当前目录这套配置，先 dsh-remote stop 再运行）')
+          console.log('')
+          if (wantOpen) await openPairPage(port)
+          return
+        }
+      }
+
       // A launcher that carries its own transport config must not silently adopt a bridge started
       // with different config (that is how a public launcher ended up advertising a self-use relay).
       if (wantRestart) {
@@ -325,9 +347,27 @@ async function main() {
       })
       break
     }
-    case 'stop':
-      console.log('前台运行的 dsh-remote 用 Ctrl+C 停止；插件模式下请在 profile 设置里关闭该插件。')
+    case 'stop': {
+      const live = await bridgeHealthy(Number(process.env.DSH_REMOTE_PORT || 6300))
+      if (!live) {
+        console.log('  没有正在运行的桥接。')
+        break
+      }
+      if (live.runtime === 'electron') {
+        console.log('')
+        console.log(`  桥接由 DSH 桌面端内部托管（PID ${live.pid} 就是 DSH 本体），不能单独停止。`)
+        console.log('  要停：在 profile 的 cordis.patch.yml 里把该插件的 enabled 改成 false，然后重启 DSH。')
+        console.log('')
+        break
+      }
+      try {
+        process.kill(Number(live.pid))
+        console.log(`  已停止桥接（PID ${live.pid}）。`)
+      } catch (err) {
+        console.log(`  停止失败：${err.message}`)
+      }
       break
+    }
     default:
       console.log(`未知命令：${command}`)
       console.log('可用：status | connect | cookie | qr | doctor | start | stop')
