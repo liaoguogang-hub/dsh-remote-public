@@ -1,19 +1,21 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    DSH Remote 一键连接：起桥接 / 开隧道 / 签 Cookie，打印地址与凭据，并打开配对二维码页。
+    DSH Remote 一键连接：起桥接 / 开隧道 / 签 Cookie，打印地址，并打开配对二维码页。
 
 .DESCRIPTION
-    普通用户双击 connect.cmd。
+    普通用户双击 connect.cmd 即可。工作由插件代码完成，按以下顺序找它：
 
-    实际工作由仓库自带的 bin/dsh-remote.mjs 完成（和 DSH 插件是同一份代码，离线可用）：
-      1. 自动发现 DSH 宿主端口（宿主每次重启会换端口）
-      2. 起桥接并把 Host 改写为固定 authority，Cookie 因此不会失效
-      3. 有 ngrok 用 ngrok，否则用 cloudflared（缺了就自动下载并验签）
-      4. 签发 30 天 Cookie，打印地址 + Cookie
-      5. 打开浏览器里的配对页二维码，手机扫码即连
+      1. 同目录 bin\dsh-remote.mjs（仓库自带，离线可用）
+      2. 已安装的全局 dsh-remote 命令
+      3. npx dsh-remote-hub@latest（需要网络，第一次会缓存）
 
-    窗口关掉 = 断开手机。
+    插件做四件事：发现 DSH 端口 → 起桥接（Host 改写）→ 开隧道或复用已有隧道 → 签 30 天 Cookie，
+    然后打印局域网/公网地址与 Cookie，并打开 /_dsh-remote/pair 的二维码页。
+
+    自建中转（如阿里云）可以这样传：
+        $env:DSH_REMOTE_PUBLIC_URL="https://你的中转地址"
+        .\connect.cmd
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -43,14 +45,31 @@ if (-not $node) {
 }
 
 $cli = Join-Path $Here 'bin\dsh-remote.mjs'
-if (-not (Test-Path $cli)) {
-    Say '缺少 bin\dsh-remote.mjs（应与本脚本在同一目录）' 'Red'
-    exit 1
+if (Test-Path $cli) {
+    & $node $cli start --open
+    Say ''
+    Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
+    return
 }
 
-# start --open: 打印地址 + Cookie，然后打开 /_dsh-remote/pair 的二维码页；进程会一直运行。
-& $node $cli start --open
+# 仓库里没有 bin/：退回到已安装的插件命令，或临时用 npx 拉取（仅首次需要网络）。
+$global = Get-Command dsh-remote -ErrorAction SilentlyContinue
+if ($global) {
+    & $global.Source start --open
+    Say ''
+    Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
+    return
+}
 
-# 走到这里说明 start 退出了（Ctrl+C 或出错）。
-Say ''
-Say '桥接已停止。按 Ctrl+C 或直接关闭窗口。' 'DarkGray'
+$npx = Get-Command npx -ErrorAction SilentlyContinue
+if ($npx) {
+    Say '仓库里没有 bin\dsh-remote.mjs，改用 npx 运行已发布的插件…' 'Yellow'
+    & $npx.Source --yes dsh-remote-hub@latest start --open
+    Say ''
+    Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
+    return
+}
+
+Say '找不到插件代码：本目录没有 bin\dsh-remote.mjs，也没有安装 dsh-remote。' 'Red'
+Say '请先安装插件： dsh plugin --profile desktop add dsh-remote-hub' 'Yellow'
+Say '或在完整仓库目录里运行本脚本（仓库根目录应包含 bin\ 与 lib\）。' 'Yellow'
