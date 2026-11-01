@@ -198,6 +198,7 @@ app/src/main/java/com/dsh/remote/
 | 市场站缓存 | 详情页看不到 README 的下载区 | 放弃依赖它，改成 Release 描述里带下载链接 |
 | 临时文件误提交 | 仓库多出 `.gitmsg.txt` | 已加入 `.gitignore` |
 | tag 混用 | 分不清 App 还是插件 | `v4.*` = App，`v0.*` = 插件 |
+| **kill 掉插件托管的桥接 = 杀掉 DSH** | 双击 connect.cmd 后桌面端「崩溃」 | 插件模式下 `health.pid` 就是 `DeepSeek Harness.exe` 的 PID；`--restart` 现在按 `health.runtime` 拒绝（`electron` 时只打印指引）。改配置请编辑 `cordis.patch.yml` 后重启 DSH |
 
 ---
 

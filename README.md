@@ -239,6 +239,10 @@ dsh-remote: ready — 手机端扫码：dsh-remote qr（或浏览器打开 http:
 **Cookie 跨重启有效**：桥接始终向 DSH 呈现固定 authority（默认 `127.0.0.1:1815`），
 所以 DSH 换端口、桥接重启都不会让手机上的凭据失效；只有签名密钥变化或 Cookie 到期（30 天）才需要重新扫码。
 
+> **不要让 `connect.cmd` 去"切换"一个由插件托管的桥接。** 插件模式下桥接跑在 DSH 进程内部，
+> `connect.cmd` 会检测到并**拒绝重启**（而不是把 DSH 一起关掉），只打印该怎么改配置。
+> 需要换公网配置时：改 `cordis.patch.yml` 的 `publicUrl` 后重启 DSH，或先完全退出 DSH 再双击 `connect.cmd`。
+
 ### 升级插件（重要：必须完全重启 DSH）
 
 ```bash
