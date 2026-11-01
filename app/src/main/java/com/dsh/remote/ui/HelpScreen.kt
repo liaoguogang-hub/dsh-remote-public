@@ -88,6 +88,16 @@ fun HelpScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
+            SectionTitle("扫码配对（推荐）")
+            Paragraph("不想手抄地址和 Cookie，就用扫码：手机对准电脑上的二维码，自动填好并连上。")
+            Numbered(1, "电脑上生成二维码", "装好 DSH 插件后运行：dsh-remote qr（或浏览器打开 http://127.0.0.1:6300/_dsh-remote/pair）。")
+            Numbered(2, "手机点右上角的扫码按钮", "在本页右上角有扫码图标；连上以后还能从「设置」右上角再次扫码。")
+            Numbered(3, "对准屏幕扫描", "扫完自动填地址、自动换凭据、自动连接，不需要再点连接。")
+            Note("二维码里不含 Cookie，只含一个 10 分钟内有效、用一次就作废的配对码；兑换成功即失效，截图泄漏也没用。")
+            Note("扫码失败怎么办：让手机和电脑连同一个 WiFi 再扫；仍不行就在电脑上运行 dsh-remote connect，把它打印的地址和 Cookie 手动填到下面的输入框。")
+
+            Spacer(Modifier.height(14.dp))
+
             SectionTitle("地址怎么选")
             KeyValue("局域网", "手机和电脑同一个 WiFi。形如 http://192.168.1.23:6300，最快、最稳。")
             KeyValue("ngrok", "人在外面时用。形如 https://xxxx.ngrok-free.dev，需要注册（见下）。")

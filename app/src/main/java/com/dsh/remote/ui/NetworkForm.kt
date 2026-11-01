@@ -67,8 +67,6 @@ fun NetworkForm(
     onConnect: () -> Unit,
     onDismissError: () -> Unit,
     onOpenHelp: () -> Unit,
-    onScanQr: () -> Unit,
-    onPairManual: (String, String) -> Unit,
 ) {
     Text(
         text = "网络连接方式",
@@ -154,71 +152,6 @@ fun NetworkForm(
     )
 
     Spacer(Modifier.height(8.dp))
-
-    var manualOpen by remember { mutableStateOf(false) }
-    var manualUrl by remember { mutableStateOf(urlDraft) }
-    var manualCode by remember { mutableStateOf("") }
-
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onScanQr) {
-            Text("扫码配对", fontSize = 12.sp)
-        }
-        TextButton(onClick = {
-            manualUrl = urlDraft
-            manualOpen = true
-        }) {
-            Text("手动输入", fontSize = 11.sp)
-        }
-        TextButton(onClick = onOpenHelp) {
-            Text("帮助", fontSize = 11.sp)
-        }
-    }
-
-    if (manualOpen) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { manualOpen = false },
-            title = { Text("手动配对", fontSize = 15.sp) },
-            text = {
-                Column {
-                    Text(
-                        "在电脑上执行 dsh-remote qr 打开配对页，把页面上的地址和配对码填到这里。",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = manualUrl,
-                        onValueChange = { manualUrl = it },
-                        label = { Text("地址") },
-                        placeholder = { Text("http://192.168.1.23:6300") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = manualCode,
-                        onValueChange = { manualCode = it.uppercase() },
-                        label = { Text("配对码") },
-                        placeholder = { Text("10 位字母数字") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        manualOpen = false
-                        onPairManual(manualUrl, manualCode)
-                    },
-                    enabled = manualUrl.isNotBlank() && manualCode.isNotBlank(),
-                ) { Text("配对") }
-            },
-            dismissButton = {
-                TextButton(onClick = { manualOpen = false }) { Text("取消") }
-            },
-        )
-    }
 
     Spacer(Modifier.height(6.dp))
     Button(

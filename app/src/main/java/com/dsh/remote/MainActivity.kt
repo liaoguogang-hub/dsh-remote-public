@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
                         setDesiredBarcodeFormats(ScanOptions.QR_CODE)
                         setPrompt("对准电脑上的配对二维码")
                         setBeepEnabled(false)
-                        setOrientationLocked(false)
+                        setOrientationLocked(true)
                     },
                 )
             }
@@ -105,7 +105,6 @@ class MainActivity : ComponentActivity() {
                             onDismissError = viewModel::dismissError,
                             onOpenHelp = viewModel::openHelp,
                             onScanQr = launchScan,
-                            onPairManual = viewModel::pairFromCode,
                         )
 
                         Screen.Help -> HelpScreen(onBack = { viewModel.backToChat() })
@@ -141,7 +140,6 @@ class MainActivity : ComponentActivity() {
                             onSessionRename = viewModel::renameSession,
                             onOpenHelp = viewModel::openHelp,
                             onScanQr = launchScan,
-                            onPairManual = viewModel::pairFromCode,
                         )
                     }
                 }

@@ -12,6 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -48,7 +53,6 @@ fun SetupScreen(
     onDismissError: () -> Unit,
     onOpenHelp: () -> Unit,
     onScanQr: () -> Unit,
-    onPairManual: (String, String) -> Unit,
 ) {
     Scaffold { inner ->
         Column(
@@ -59,12 +63,24 @@ fun SetupScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 18.dp),
         ) {
-            Text(
-                text = "连接你的电脑",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "连接你的电脑",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onScanQr) {
+                    Icon(Icons.Filled.QrCodeScanner, contentDescription = "扫码配对")
+                }
+                IconButton(onClick = onOpenHelp) {
+                    Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "帮助")
+                }
+            }
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "在电脑上双击 connect.cmd，把它打印的地址和 Cookie 填到下面。",
@@ -92,36 +108,8 @@ fun SetupScreen(
                 onConnect = onConnect,
                 onDismissError = onDismissError,
                 onOpenHelp = onOpenHelp,
-                onScanQr = onScanQr,
-                onPairManual = onPairManual,
             )
 
-            Spacer(Modifier.height(22.dp))
-
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    Text(
-                        text = "第一次用？",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "点下面的「打开帮助」，里面写了完整的连接步骤、ngrok 固定域名怎么弄、以及连不上时先查哪里。",
-                        fontSize = 11.sp,
-                        lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = onOpenHelp) { Text("打开帮助", fontSize = 12.sp) }
-                    }
-                }
-            }
         }
     }
 }

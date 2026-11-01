@@ -35,6 +35,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -117,7 +118,6 @@ fun ChatScreen(
     onDeleteHistory: (String) -> Unit,
     onConnect: () -> Unit,
     onScanQr: () -> Unit,
-    onPairManual: (String, String) -> Unit,
     onDisconnect: () -> Unit,
     onExit: () -> Unit,
     onApproval: (ApprovalRequest, Boolean) -> Unit,
@@ -407,7 +407,6 @@ fun ChatScreen(
                     showSettings = false
                     onScanQr()
                 },
-                onPairManual = onPairManual,
                 onOpenHelp = {
                     showSettings = false
                     onOpenHelp()
@@ -439,7 +438,6 @@ private fun SettingsSheet(
     onDismissError: () -> Unit,
     onOpenHelp: () -> Unit,
     onScanQr: () -> Unit,
-    onPairManual: (String, String) -> Unit,
     onDisconnect: () -> Unit,
 ) {
     Column(
@@ -451,12 +449,18 @@ private fun SettingsSheet(
             .padding(horizontal = 20.dp)
             .padding(bottom = 20.dp),
     ) {
-        Text(
-            "设置",
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "设置",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onScanQr) {
+                Icon(Icons.Filled.QrCodeScanner, contentDescription = "扫码配对")
+            }
+        }
 
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -507,8 +511,6 @@ private fun SettingsSheet(
             onConnect = onConnect,
             onDismissError = onDismissError,
             onOpenHelp = onOpenHelp,
-            onScanQr = onScanQr,
-            onPairManual = onPairManual,
         )
 
         Spacer(Modifier.height(16.dp))
