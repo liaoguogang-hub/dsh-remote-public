@@ -754,8 +754,10 @@ private fun SessionDrawer(
                 Icon(
                     Icons.Filled.Add,
                     contentDescription = "新建对话",
-                    tint = if (state.connected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Same tint as the search/view buttons on its left: the accent colour made the
+                    // "+" look like a different kind of control.
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        .copy(alpha = if (state.connected) 1f else 0.38f),
                     modifier = Modifier.size(20.dp),
                 )
             }

@@ -30,11 +30,13 @@ fun ScanIcon(
     } else {
         Modifier
     }
-    Canvas(modifier = modifier.size(24.dp).then(semantic)) {
+    // 20dp: Material icons draw a ~20dp glyph in a 24dp box, so matching that keeps the scan
+    // button from looking heavier than the help button next to it.
+    Canvas(modifier = modifier.size(20.dp).then(semantic)) {
         val w = size.width
         val h = size.height
-        val stroke = w * 0.085f
-        val inset = w * 0.06f
+        val stroke = w * 0.095f
+        val inset = w * 0.04f
         val arm = w * 0.26f
         val left = inset
         val top = inset
