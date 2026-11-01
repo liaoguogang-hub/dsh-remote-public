@@ -193,6 +193,7 @@ dsh plugin --profile web add github:liaoguogang-hub/dsh-remote-public
 查看结果：
 
 ```bash
+dsh-remote qr         # 打开配对页（二维码），手机扫一下就自动填好
 dsh-remote status     # 局域网地址、公网地址、Cookie、上游端口
 dsh-remote connect    # 直接打印要抄进手机的两行
 dsh-remote doctor     # 逐项自检：凭据、ngrok、cloudflared、宿主端口
@@ -211,3 +212,27 @@ dsh-remote start      # 不开 DSH 也能单独前台跑（Ctrl+C 退出）
 
 > 公网隧道受网络影响：`api.trycloudflare.com` 不可达时插件会跳过公网、只给局域网地址，
 > 并在 `status.json` 里写明原因，不会假装成功。
+
+### 扫码配对（一次性配对码）
+
+不想手抄 Cookie 就用二维码：
+
+```bash
+dsh-remote qr
+```
+
+浏览器会打开 `http://127.0.0.1:6300/_dsh-remote/pair`，显示一个二维码。手机 DSH Remote 里点
+「扫码配对」，扫完自动填入地址并换取登录凭据，直接连上。
+
+安全设计：
+- 二维码里**不含 Cookie**，只含一个 **10 分钟有效的一次性配对码**（`{"v":1,"u":"<地址>","c":"<配对码>","e":<过期时间>}`）；
+- 兑换成功即作废，截图/偷拍泄漏的是一个立刻失效的码，而不是 30 天访问权；
+- 配对码只存在内存里，插件重启即全部失效（失效安全）。
+
+端点（都在桥接上，不经 DSH）：
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| GET | `/_dsh-remote/pair` | 配对页（二维码 HTML） |
+| GET | `/_dsh-remote/pair.svg` | 只要二维码 SVG |
+| POST | `/_dsh-remote/pair/redeem` | `{code}` → `{url, cookie}`；用过即失效 |

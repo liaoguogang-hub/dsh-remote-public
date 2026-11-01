@@ -8,11 +8,13 @@
  *   dsh-remote start       run the supervisor in the foreground (Ctrl+C stops it)
  *   dsh-remote stop        ask a foreground `start` to stop (best effort, via status file)
  *   dsh-remote doctor      check every prerequisite in one pass
+ *   dsh-remote qr          open the pairing page (QR) in the default browser
  *
  * @module bin/dsh-remote
  */
 
 import fs from 'node:fs'
+import { execFile } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -45,6 +47,7 @@ function printStatus() {
   console.log(`  桥接端口     ${status.bridgePort}`)
   console.log(`  DSH 上游     ${status.upstreamPort ? '127.0.0.1:' + status.upstreamPort : '未找到'}`)
   console.log(`  更新时间     ${new Date(status.updatedAt).toLocaleString()}`)
+  if (status.bridgePort) console.log(`  扫码配对     dsh-remote qr   （或 http://127.0.0.1:${status.bridgePort}/_dsh-remote/pair）`)
   if (status.cookie) {
     console.log(`  Cookie 到期  ${fmtTime(status.cookieExpiresAt)}${remaining !== null ? `（还剩 ${remaining} 天）` : ''}`)
     console.log('')
@@ -56,6 +59,29 @@ function printStatus() {
   }
   console.log('  ' + '-'.repeat(52))
   console.log('')
+}
+
+function openBrowser(url) {
+  const cmd = process.platform === 'win32' ? 'cmd' : process.platform === 'darwin' ? 'open' : 'xdg-open'
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url]
+  return new Promise((resolve) => {
+    execFile(cmd, args, { windowsHide: true }, () => resolve())
+  })
+}
+
+async function qrCommand() {
+  const status = readStatus()
+  const port = status?.bridgePort ?? Number(process.env.DSH_REMOTE_PORT || 6300)
+  const page = `http://127.0.0.1:${port}/_dsh-remote/pair`
+  console.log('')
+  console.log('  配对页：', page)
+  console.log('  用手机 DSH Remote 的「扫码配对」扫屏幕上的二维码（10 分钟内有效，只能用一次）')
+  console.log('')
+  if (process.argv.includes('--no-open')) {
+    console.log('  （--no-open：未自动打开浏览器）')
+    return
+  }
+  await openBrowser(page)
 }
 
 async function doctor() {
@@ -117,6 +143,10 @@ async function main() {
     case 'doctor':
       await doctor()
       break
+    case 'qr':
+    case 'pair':
+      await qrCommand()
+      break
     case 'start': {
       const handle = await start({ log: (m) => console.log(m) })
       process.on('SIGINT', async () => {
@@ -130,7 +160,7 @@ async function main() {
       break
     default:
       console.log(`未知命令：${command}`)
-      console.log('可用：status | connect | cookie | doctor | start | stop')
+      console.log('可用：status | connect | cookie | qr | doctor | start | stop')
       process.exitCode = 1
   }
 }
