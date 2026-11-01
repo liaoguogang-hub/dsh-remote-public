@@ -26,6 +26,10 @@ $ProgressPreference = 'SilentlyContinue'
 
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# 钉住插件版本：pnpm 的 minimumReleaseAge 会让 @latest 回退到很旧的版本，
+# 而旧版本没有扫码配对。发布新版本时记得同步这里（见 RELEASING.md）。
+$PluginVersion = '0.4.4'
+
 function Say($text, $color = 'White') { Write-Host $text -ForegroundColor $color }
 
 function Find-Node {
@@ -71,7 +75,7 @@ if ($global) {
 $npx = Get-Command npx -ErrorAction SilentlyContinue
 if ($npx) {
     Say '仓库里没有 bin\dsh-remote.mjs，改用 npx 运行已发布的插件…' 'Yellow'
-    & $npx.Source --yes dsh-remote-hub@latest start --open --adopt
+    & $npx.Source --yes dsh-remote-hub@$PluginVersion start --open --adopt
     Say ''
     Say '桥接已停止。按任意键关闭窗口。' 'DarkGray'
     return
