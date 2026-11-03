@@ -17,11 +17,29 @@ Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 
 功能与 UI 与自用版 4.12.2 完全一致。
 
+> ### ⚠️ 安装前必读：命令里**必须带版本号**
+>
+> ```bash
+> dsh plugin --profile desktop add dsh-remote-hub@0.4.5 --registry=https://registry.npmjs.org
+> ```
+>
+> 两个参数都不能少：
+>
+> | 少了什么 | 会发生什么 |
+> |---|---|
+> | **版本号** | DSH profile 默认 `minimumReleaseAge=1440`（24 小时），pnpm 会**静默回退**到很旧的版本（0.1.0 缺少扫码配对 → 表现为「扫码页打不开」，且不报错） |
+> | **官方源** | profile 默认走国内镜像 `registry.npmmirror.com`，新版本同步有延迟，会报 `ERR_PNPM_NO_MATCHING_VERSION` |
+>
+> 装完用 `dsh-remote status` 确认（第一行应显示「插件版本 v0.4.5」）。
+> 若已经装成旧版本，重新执行上面那条带版本号的命令即可。
+>
+> （插件中心的安装按钮目前不带版本号，已向维护者反馈：[dsh-plugin-hub#586](https://github.com/dshplugin/dsh-plugin-hub/issues/586)）
+
 ## 下载手机端 App
 
-**DSH Remote v4.21.2** · Android 8.0 (API 26) 及以上 · 2.8 MB
+**DSH Remote v4.21.3** · Android 8.0 (API 26) 及以上 · 2.8 MB
 
-[⬇️ 下载 APK](https://github.com/liaoguogang-hub/dsh-remote-public/releases/download/v4.21.2/DSH-Remote-v4.21.2.apk) ·
+[⬇️ 下载 APK](https://github.com/liaoguogang-hub/dsh-remote-public/releases/download/v4.21.3/DSH-Remote-v4.21.3.apk) ·
 [全部版本](https://github.com/liaoguogang-hub/dsh-remote-public/releases)
 
 安装后应用名「DSH Remote」，包名 `com.dsh.remote.ngrok`（可与作者的 `DSH` 自用版共存）。
