@@ -15,25 +15,22 @@ Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 | 包名 | `com.dsh.remote` | `com.dsh.remote.ngrok`（可与自用版共存） |
 | 应用名 / APK | `DSH` / `DSH-Remote-v*.apk` | `DSH Remote` / `DSH Remote-v*.apk` |
 
-功能与 UI 与自用版 4.12.2 完全一致。
+两个版本 **UI 与功能同源**（同一套 Kotlin/Compose 代码），版本号各自独立递增；差异只在连接方式与是否内置凭据。
 
-> ### ⚠️ 安装前必读：命令里**必须带版本号**
+> ### 安装命令
 >
 > ```bash
 > dsh plugin --profile desktop add dsh-remote-hub@0.4.5 --registry=https://registry.npmjs.org
 > ```
 >
-> 两个参数都不能少：
+> 建议**带上版本号与官方源**：DSH profile 默认 `minimumReleaseAge=1440`（24 小时），
+> pnpm 遇到刚发布的版本会**静默回退**到很旧的版本而不报错（0.1.0 缺少扫码配对，表现为「扫码页打不开」）；
+> profile 默认走国内镜像，新版本同步有延迟时也会报 `ERR_PNPM_NO_MATCHING_VERSION`。
 >
-> | 少了什么 | 会发生什么 |
-> |---|---|
-> | **版本号** | DSH profile 默认 `minimumReleaseAge=1440`（24 小时），pnpm 会**静默回退**到很旧的版本（0.1.0 缺少扫码配对 → 表现为「扫码页打不开」，且不报错） |
-> | **官方源** | profile 默认走国内镜像 `registry.npmmirror.com`，新版本同步有延迟，会报 `ERR_PNPM_NO_MATCHING_VERSION` |
+> 装完用 `dsh-remote status` 确认（第一行显示「插件版本 v0.4.5」）；若装成了旧版本，重跑上面那条命令即可。
 >
-> 装完用 `dsh-remote status` 确认（第一行应显示「插件版本 v0.4.5」）。
-> 若已经装成旧版本，重新执行上面那条带版本号的命令即可。
->
-> （插件中心的安装按钮目前不带版本号，已向维护者反馈：[dsh-plugin-hub#586](https://github.com/dshplugin/dsh-plugin-hub/issues/586)）
+> 插件中心的安装按钮此前不带版本号，已反馈并获维护者确认修复：
+> [dsh-plugin-hub#586](https://github.com/dshplugin/dsh-plugin-hub/issues/586)。修复后此处的版本号说明可简化。
 
 ## 下载手机端 App
 
