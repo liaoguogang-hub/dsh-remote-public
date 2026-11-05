@@ -198,6 +198,7 @@ app/src/main/java/com/dsh/remote/
 | 市场站缓存 | 详情页看不到 README 的下载区 | 放弃依赖它，改成 Release 描述里带下载链接 |
 | 临时文件误提交 | 仓库多出 `.gitmsg.txt` | 已加入 `.gitignore` |
 | tag 混用 | 分不清 App 还是插件 | `v4.*` = App，`v0.*` = 插件 |
+| **端口被 Windows 保留** | `listen EACCES: permission denied 0.0.0.0:6300` | Hyper-V/WinNAT 动态保留段（如 6230-6329）盖住了 6300；0.4.7+ 自动回退 6380→6400→临时端口。换端口后**记得同步 `ssh -R` 中转目标**，否则中转会 502 |
 | **kill 掉插件托管的桥接 = 杀掉 DSH** | 双击 connect.cmd 后桌面端「崩溃」 | 插件模式下 `health.pid` 就是 `DeepSeek Harness.exe` 的 PID；`--restart` 现在按 `health.runtime` 拒绝（`electron` 时只打印指引）。改配置请编辑 `cordis.patch.yml` 后重启 DSH |
 
 ---

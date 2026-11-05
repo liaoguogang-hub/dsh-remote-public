@@ -258,6 +258,12 @@ dsh-remote: ready — 手机端扫码：dsh-remote qr（或浏览器打开 http:
 > `connect.cmd` 会检测到并**拒绝重启**（而不是把 DSH 一起关掉），只打印该怎么改配置。
 > 需要换公网配置时：改 `cordis.patch.yml` 的 `publicUrl` 后重启 DSH，或先完全退出 DSH 再双击 `connect.cmd`。
 
+> **端口被 Windows 占用/保留怎么办？** 桥接默认 6300，但 Windows 的 Hyper-V/WinNAT 会动态保留
+> 一段端口（`netsh int ipv4 show excludedportrange protocol=tcp` 可查，常见如 `6230-6329`）。
+> 落在保留段里的端口绑定会失败并报 `EACCES: permission denied`（不是 `EADDRINUSE`）。
+> 0.4.7 起插件会自动回退到 `6380` → `6400` → 临时端口，并把实际端口写进 `status.json` 与二维码；
+> 想固定端口就在 profile 里给 `port` 指定一个不在保留段内的值。
+
 ### 升级插件（重要：必须完全重启 DSH）
 
 ```bash
