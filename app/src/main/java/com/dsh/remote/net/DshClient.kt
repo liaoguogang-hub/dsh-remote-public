@@ -217,15 +217,17 @@ class DshClient {
     /**
      * Redeem a one-time pairing code for the browser cookie.
      *
-     * The QR payload carries both addresses (`l` = LAN, `u` = public tunnel), so one scan can fill
-     * both tabs; the caller then decides which one to use. The code is single-use and short-lived,
-     * which is what makes a photographed code useless.
+     * The QR carries only the code; the PC answers with the transports this build may use, chosen
+     * by [view] (`public` = LAN + ngrok, `self` = LAN + self-hosted relay). The code is single-use
+     * and short-lived, which is what makes a photographed code useless.
      */
-    suspend fun redeemPairing(base: String, code: String): PairingResult = withContext(Dispatchers.IO) {
+    suspend fun redeemPairing(base: String, code: String, view: String): PairingResult = withContext(Dispatchers.IO) {
         val root = normalizeBase(base)
         val body = JSONObject().put("code", code).toString()
+        // The view tells the PC which transports this build may take. Two apps share one pairing
+        // page, so without it the first app to scan would also fill in the other app's transport.
         val req = Request.Builder()
-            .url("$root/_dsh-remote/pair/redeem")
+            .url("$root/_dsh-remote/pair/redeem?as=$view")
             .post(body.toRequestBody("application/json".toMediaType()))
             .build()
         http.newCall(req).execute().use { resp ->

@@ -400,7 +400,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun pairFromQr(raw: String) {
         val parsed = runCatching { JSONObject(raw) }.getOrNull()
             ?: return _state.update { it.copy(error = "二维码内容无法识别") }
-        // `l` may be a list (v2) or a single string (v1).
+        // v4 carries only the code; v1-v3 also carried the addresses inline. Both are accepted so an
+        // older QR still pairs, but the addresses are only a fallback — the redeem response is
+        // authoritative and already filtered to this build's transports.
         val lanList = mutableListOf<String>()
         when (val node = parsed.opt("l")) {
             is JSONArray -> for (i in 0 until node.length()) {
@@ -408,13 +410,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
             is String -> node.trim().takeIf { it.isNotEmpty() }?.let(lanList::add)
         }
-        // The public build deliberately ignores `r` (self-hosted relay): that transport belongs to
-        // the self-use setup, and leaking it into this app would fill 「自定义」 with someone's server.
+        // The public build ignores `r` (self-hosted relay): that transport belongs to the self-use
+        // setup, and leaking it into this app would fill 「自定义」 with someone else's server.
         val tunnelInQr = parsed.optString("u").trim().ifEmpty { null }
         val code = parsed.optString("c").trim()
-        val bootstrap = lanList.firstOrNull() ?: tunnelInQr
-        if (bootstrap == null || code.isEmpty()) {
+        if (code.isEmpty()) {
             return _state.update { it.copy(error = "这不是 DSH Remote 的配对码") }
+        }
+        // v4: no address in the QR, so redeem against any reachable base — the PC answers with the
+        // LAN list and the tunnel that belong to this build.
+        val bootstrap = lanList.firstOrNull() ?: tunnelInQr
+        if (bootstrap == null) {
+            return _state.update { it.copy(error = "二维码里没有地址，请用电脑上的配对页重新生成") }
         }
         val expiresAt = parsed.optLong("e", 0L)
         if (expiresAt > 0 && System.currentTimeMillis() > expiresAt) {
@@ -425,9 +432,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.update { it.copy(connecting = true, error = null) }
             try {
-                val result = client.redeemPairing(bootstrap, code)
+                val result = client.redeemPairing(bootstrap, code, "public")
                 val lanCandidates = (result.lan.ifEmpty { lanList }).distinct()
-                val tunnelUrl = result.tunnel ?: tunnelInQr
+                // Only the redeem response may fill the tabs: it is filtered by this build's view
+                // (public → LAN + ngrok). The QR's own addresses are bootstrap hints, not answers.
+                val tunnelUrl = result.tunnel
 
                 // Two transports only: LAN (first one that answers) and the auto tunnel.
                 val lanUrl = pickLan(lanCandidates)
