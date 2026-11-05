@@ -145,26 +145,33 @@ class DshClient {
     }
 
     /**
-     * Scan the phone's own /24 subnets for the desktop bridge on [port] and return its base URL.
+     * Scan the phone's own /24 subnets for the desktop bridge and return its base URL.
      *
      * The desktop machine's LAN address drifts (DHCP gave 192.168.0.129, then 192.168.43.69), so a
      * hard-coded address baked into the APK goes stale. A TCP probe is enough: the bridge always
      * listens on 0.0.0.0:<port>, and nothing else on a home network uses that port.
+     *
+     * The port is not fixed either: 6300 is the default, but Windows can reserve it (Hyper-V/WinNAT
+     * hold 6230-6329, and a bind there fails with EACCES), and the plugin then falls back to 6380
+     * or 6400. So the common ports are tried in turn and the first live bridge wins.
      */
-    suspend fun discoverLanBase(port: Int = 6300): String? = withContext(Dispatchers.IO) {
-        for (prefix in localSubnetPrefixes()) {
-            val candidates = (1..254).map { "$prefix.$it" }
-            for (chunk in candidates.chunked(48)) {
-                val hit = coroutineScope {
-                    chunk.map { ip ->
-                        async(Dispatchers.IO) { if (tcpReachable(ip, port)) ip else null }
-                    }.awaitAll().firstOrNull { it != null }
+    suspend fun discoverLanBase(ports: List<Int> = LAN_BRIDGE_PORTS): String? =
+        withContext(Dispatchers.IO) {
+            for (port in ports) {
+                for (prefix in localSubnetPrefixes()) {
+                    val candidates = (1..254).map { "$prefix.$it" }
+                    for (chunk in candidates.chunked(48)) {
+                        val hit = coroutineScope {
+                            chunk.map { ip ->
+                                async(Dispatchers.IO) { if (tcpReachable(ip, port)) ip else null }
+                            }.awaitAll().firstOrNull { it != null }
+                        }
+                        if (hit != null) return@withContext "http://$hit:$port"
+                    }
                 }
-                if (hit != null) return@withContext "http://$hit:$port"
             }
+            null
         }
-        null
-    }
 
     private fun localSubnetPrefixes(): List<String> {
         val prefixes = mutableListOf<String>()
@@ -405,3 +412,11 @@ class DshClient {
         baseUrl = ""
     }
 }
+
+/**
+ * Ports the desktop bridge may be listening on, most likely first.
+ *
+ * 6300 is the documented default. 6380 and 6400 are the fallbacks the plugin uses when the
+ * default is unavailable — typically because Windows reserved the range for Hyper-V/WinNAT.
+ */
+val LAN_BRIDGE_PORTS = listOf(6300, 6380, 6400)

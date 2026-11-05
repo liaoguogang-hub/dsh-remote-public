@@ -5,7 +5,8 @@ package com.dsh.remote.data
  *
  * This build ships **no server address and no credential**. The desktop host only listens on
  * loopback, so a phone needs one reachable hop in front of it: an ngrok tunnel, a reverse proxy,
- * or the LAN bridge (`lan-proxy.mjs` on port 6300). Whatever the hop is, it must forward to the
+ * or the LAN bridge (the desktop plugin's bridge, port 6300 by default and 6380/6400 when
+ * Windows reserves the default). Whatever the hop is, it must forward to the
  * same DSH process the desktop GUI uses — pointing at an independent `dsh web` instance makes
  * prompts fail with "already owned by an active write handle".
  *
