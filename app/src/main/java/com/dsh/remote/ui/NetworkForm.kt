@@ -18,6 +18,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +66,7 @@ fun NetworkForm(
     onPickHistory: (String) -> Unit,
     onDeleteHistory: (String) -> Unit,
     onConnect: () -> Unit,
+    onCancelConnect: () -> Unit,
     onDismissError: () -> Unit,
     onOpenHelp: () -> Unit,
 ) {
@@ -154,6 +156,27 @@ fun NetworkForm(
     Spacer(Modifier.height(8.dp))
 
     Spacer(Modifier.height(6.dp))
+    // While a connection is in flight the primary action becomes "stop": without it the only way
+    // out of a stuck attempt was to wait for the timeout or kill the app.
+    if (connecting) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(10.dp))
+            Text("正在连接…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.weight(1f))
+            OutlinedButton(
+                onClick = onCancelConnect,
+                modifier = Modifier.height(40.dp),
+            ) {
+                Text("停止连接", fontSize = 13.sp)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+
     Button(
         onClick = onConnect,
         enabled = !connecting && urlDraft.isNotBlank(),
@@ -161,17 +184,7 @@ fun NetworkForm(
             .fillMaxWidth()
             .height(46.dp),
     ) {
-        if (connecting) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onPrimary,
-            )
-            Spacer(Modifier.width(10.dp))
-            Text("连接中…", fontSize = 14.sp)
-        } else {
-            Text("连接", fontSize = 15.sp)
-        }
+        Text("连接", fontSize = 15.sp)
     }
 
     if (error != null) {

@@ -49,6 +49,7 @@ fun SetupScreen(
     onPickHistory: (String) -> Unit,
     onDeleteHistory: (String) -> Unit,
     onConnect: () -> Unit,
+    onCancelConnect: () -> Unit,
     onDismissError: () -> Unit,
     onOpenHelp: () -> Unit,
     onScanQr: () -> Unit,
@@ -105,6 +106,7 @@ fun SetupScreen(
                 onPickHistory = onPickHistory,
                 onDeleteHistory = onDeleteHistory,
                 onConnect = onConnect,
+                onCancelConnect = onCancelConnect,
                 onDismissError = onDismissError,
                 onOpenHelp = onOpenHelp,
             )

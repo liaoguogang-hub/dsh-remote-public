@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -152,6 +153,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Foreground reconnection loop started when the mux drops (carrier IP change, app freeze). */
     private var autoReconnectJob: Job? = null
+    /** The in-flight connect attempt, kept so the user can cancel it from the UI. */
+    private var connectJob: Job? = null
+
+    private companion object {
+        /** Upper bound for one connect attempt: bridge up but silent must not hang the UI. */
+        const val CONNECT_TIMEOUT_MS = 20_000L
+    }
 
     /** Debounced `session/search` for the drawer query. */
     private var searchJob: Job? = null
@@ -472,10 +480,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _state.value.tokenDraft
         } else settings.token(mode)
 
-        viewModelScope.launch {
+        connectJob = viewModelScope.launch {
             _state.update { it.copy(connecting = true, error = null, mode = mode, urlDraft = url, tokenDraft = token) }
             try {
-                establish(mode, url, token, restoreSession = true)
+                // A dead bridge can accept the socket and never answer, which used to leave the
+                // spinner up forever. Cap the attempt so it always ends in either success or error.
+                withTimeout(CONNECT_TIMEOUT_MS) { establish(mode, url, token, restoreSession = true) }
             } catch (t: Throwable) {
                 client.reset()
                 // LAN-first policy: when the private address stops answering (left the house, changed
@@ -1574,7 +1584,44 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Abort whatever the app is doing to connect and hand the screen back to the user.
+     *
+     * Covers all three ways a connection can be "in progress": an in-flight attempt, the automatic
+     * reconnect loop, and a live mux. Without this the only exit was waiting for a timeout.
+     */
+    fun cancelConnect() {
+        connectJob?.cancel()
+        connectJob = null
+        autoReconnectJob?.cancel()
+        autoReconnectJob = null
+        followStreamId?.let { runCatching { client.cancelStream(it) } }
+        followStreamId = null
+        runCatching { client.reset() }
+        seen.clear()
+        runCatching { com.dsh.remote.DshService.stop(appContext) }
+        val mode = _state.value.mode
+        _state.update {
+            it.copy(
+                screen = Screen.Setup,
+                connecting = false,
+                connected = false,
+                running = false,
+                streaming = "",
+                sessionId = null,
+                messages = emptyList(),
+                error = "已停止连接。可以点右上角扫码重新配对，或再次点「连接」。",
+                urlDraft = settings.url(mode),
+                tokenDraft = settings.token(mode),
+            )
+        }
+    }
+
     fun disconnect() {
+        connectJob?.cancel()
+        connectJob = null
+        autoReconnectJob?.cancel()
+        autoReconnectJob = null
         followStreamId?.let { client.cancelStream(it) }
         followStreamId = null
         client.reset()
