@@ -28,7 +28,7 @@ $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # 钉住插件版本：pnpm 的 minimumReleaseAge 会让 @latest 回退到很旧的版本，
 # 而旧版本没有扫码配对。发布新版本时记得同步这里（见 RELEASING.md）。
-$PluginVersion = '0.4.5'
+$PluginVersion = '0.4.7'
 
 function Say($text, $color = 'White') { Write-Host $text -ForegroundColor $color }
 
