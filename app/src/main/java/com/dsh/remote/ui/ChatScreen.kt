@@ -75,6 +75,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,6 +86,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -121,6 +124,7 @@ fun ChatScreen(
     onDisconnect: () -> Unit,
     onExit: () -> Unit,
     onApproval: (ApprovalRequest, Boolean) -> Unit,
+    onQuestionAnswer: (QuestionRequest, Map<String, List<String>>) -> Unit,
     onDismissError: () -> Unit,
     onLoadEarlier: () -> Unit,
     onSessionQueryChange: (String) -> Unit,
@@ -163,13 +167,26 @@ fun ChatScreen(
     // Auto-scroll to the newest message, but not when older history was just prepended:
     // that would yank the user away from what they were reading.
     var lastFirstKey by remember { mutableStateOf<String?>(null) }
+    // Item order inside the transcript LazyColumn:
+    //   [load_earlier?] + messages + [streaming?] + approvals + questions
+    val interruptCount = state.pendingApprovals.size + state.pendingQuestions.size
+    val lastItemIndex = (state.messages.size +
+        (if (state.streaming.isNotEmpty()) 1 else 0) +
+        interruptCount) - 1
     LaunchedEffect(state.messages.size, state.streaming, state.messages.firstOrNull()?.key) {
         val firstKey = state.messages.firstOrNull()?.key
         val prepended = lastFirstKey != null && firstKey != lastFirstKey
         lastFirstKey = firstKey
         if (prepended) return@LaunchedEffect
-        val target = (state.messages.size + if (state.streaming.isNotEmpty()) 1 else 0) - 1
-        if (target >= 0) runCatching { listState.animateScrollToItem(target) }
+        if (lastItemIndex >= 0) runCatching { listState.animateScrollToItem(lastItemIndex) }
+    }
+
+    // A pending question/approval is a blocking prompt the user must answer, so it
+    // has to be on screen when it lands — not one screenful below the fold.
+    LaunchedEffect(interruptCount) {
+        if (interruptCount > 0 && lastItemIndex >= 0) {
+            runCatching { listState.animateScrollToItem(lastItemIndex) }
+        }
     }
 
     ModalNavigationDrawer(
@@ -332,7 +349,38 @@ fun ChatScreen(
                                 )
                             }
                         }
-                        if (state.messages.isEmpty() && state.streaming.isEmpty()) {
+                        // Tool approvals and ask-user questions interrupt the turn.
+                        //
+                        // They live INSIDE the transcript scroll, not in the fixed
+                        // composer: a card that outgrows the space between the
+                        // transcript and the input field used to be silently clipped
+                        // — the tail of the option list and the 提交 button rendered
+                        // below the fold and no gesture could reach them, because
+                        // the composer had no scroll container of its own and the
+                        // transcript could not scroll a child it did not own.
+                        // As transcript items they scroll with the conversation:
+                        // one scrollable, every option and the 提交 button reachable.
+                        items(
+                            count = state.pendingApprovals.size,
+                            key = { i -> "approval_${state.pendingApprovals[i].eventId}" },
+                        ) { i ->
+                            ApprovalCard(
+                                approval = state.pendingApprovals[i],
+                                onAnswer = onApproval,
+                            )
+                        }
+                        items(
+                            count = state.pendingQuestions.size,
+                            key = { i -> "question_${state.pendingQuestions[i].eventId}" },
+                        ) { i ->
+                            QuestionCard(
+                                batch = state.pendingQuestions[i],
+                                onAnswer = onQuestionAnswer,
+                            )
+                        }
+                        if (state.messages.isEmpty() && state.streaming.isEmpty() &&
+                            state.pendingApprovals.isEmpty() && state.pendingQuestions.isEmpty()
+                        ) {
                             item(key = "__empty__") { EmptyState(state.connected) }
                         }
                     }
@@ -353,8 +401,6 @@ fun ChatScreen(
                         onSend(text)
                     },
                     onStop = onStop,
-                    approvals = state.pendingApprovals,
-                    onApproval = onApproval,
                 )
             }
         }
@@ -666,14 +712,37 @@ private fun SessionDrawer(
     onSessionRename: (String, String) -> Unit,
 ) {
     var searchOpen by remember { mutableStateOf(state.sessionQuery.isNotEmpty()) }
+    // The search box keeps its own TextFieldValue. With the plain String overload, every
+    // external state round-trip rebuilt the field's value and reset the caret to offset 0,
+    // which showed up as "type one letter, caret jumps in front of it". Holding the value
+    // (with an explicit selection) keeps the caret where the user left it.
+    var searchValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = state.sessionQuery,
+                selection = TextRange(state.sessionQuery.length),
+            )
+        )
+    }
+    // Adopt genuine external resets (clear button, filter change, reconnect) without
+    // fighting the caret while the user is mid-word.
+    LaunchedEffect(state.sessionQuery) {
+        if (state.sessionQuery != searchValue.text) {
+            searchValue = TextFieldValue(
+                text = state.sessionQuery,
+                selection = TextRange(state.sessionQuery.length),
+            )
+        }
+    }
     var viewMenuOpen by remember { mutableStateOf(false) }
     var rowMenuFor by remember { mutableStateOf<String?>(null) }
     var renameTarget by remember { mutableStateOf<SessionRow?>(null) }
     var renameDraft by remember { mutableStateOf("") }
 
-    // The desktop shows SESSION_WATERMARK_BASE rows and reveals the same amount per click.
-    // The phone keeps 10 rows and adds 5 each time, resetting whenever the view changes.
-    val pageBase = 10
+    // The phone shows a short first page per agent and reveals the same amount per click,
+    // resetting whenever the view changes. Keep base == step so "展开其余" always adds
+    // exactly one more page (5 rows) instead of a larger jump.
+    val pageBase = 5
     val pageStep = 5
     var expanded by remember(state.sessionQuery, state.archivedFilter, state.orderBy) {
         mutableStateOf(0)
@@ -769,8 +838,11 @@ private fun SessionDrawer(
 
         if (searchOpen) {
             OutlinedTextField(
-                value = state.sessionQuery,
-                onValueChange = onSessionQueryChange,
+                value = searchValue,
+                onValueChange = { next ->
+                    searchValue = next
+                    onSessionQueryChange(next.text)
+                },
                 placeholder = { Text("搜索会话名称", fontSize = 12.sp) },
                 leadingIcon = {
                     Icon(
@@ -781,8 +853,11 @@ private fun SessionDrawer(
                     )
                 },
                 trailingIcon = {
-                    if (state.sessionQuery.isNotEmpty()) {
-                        IconButton(onClick = { onSessionQueryChange("") }) {
+                    if (searchValue.text.isNotEmpty()) {
+                        IconButton(onClick = {
+                            searchValue = TextFieldValue()
+                            onSessionQueryChange("")
+                        }) {
                             Icon(
                                 Icons.Filled.Close,
                                 contentDescription = "清除搜索",
@@ -1324,15 +1399,14 @@ private fun Composer(
     onPermissionClick: () -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    approvals: List<ApprovalRequest>,
-    onApproval: (ApprovalRequest, Boolean) -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth()) {
-            // Tool approvals interrupt the turn: answer before anything else.
-            approvals.forEach { approval ->
-                ApprovalCard(approval = approval, onAnswer = onApproval)
-            }
+            // Tool approvals and ask-user questions render inside the transcript
+            // LazyColumn (see ChatScreen), not here: a nested scroll container
+            // inside this fixed-height composer fought the transcript's own
+            // scrolling, so a long option list could neither be reached nor
+            // scrolled back. One scrollable for the whole conversation.
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -1429,9 +1503,139 @@ private fun ApprovalCard(approval: ApprovalRequest, onAnswer: (ApprovalRequest, 
     }
 }
 
+/**
+ * One ask-user batch forwarded by the Host as `user-questions/request`.
+ *
+ * The Host blocks the turn until it receives exactly one answer per question,
+ * so the submit button stays disabled until every question has a selection.
+ * A single question with a single-select list answers on tap — that is the
+ * common "pick one" case and a submit press would be pure ceremony.
+ */
 @Composable
-private fun Chip(text: String, onClick: () -> Unit, enabled: Boolean) {
+private fun QuestionCard(
+    batch: QuestionRequest,
+    onAnswer: (QuestionRequest, Map<String, List<String>>) -> Unit,
+) {
+    // questionId -> selected option labels
+    val picks = remember(batch.eventId) {
+        mutableStateMapOf<String, List<String>>().apply {
+            batch.questions.forEach { put(it.id, emptyList()) }
+        }
+    }
+    val complete = batch.questions.all { picks[it.id].orEmpty().isNotEmpty() }
+    val submit = { onAnswer(batch, batch.questions.associate { it.id to picks[it.id].orEmpty() }) }
+    val tapThrough = batch.questions.size == 1 &&
+        batch.questions.first().multiSelect.not() &&
+        batch.questions.first().options.isNotEmpty()
+
     Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(
+                "需要你选择",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+            )
+            batch.questions.forEach { question ->
+                if (question.header.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        question.header,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                    )
+                }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    question.question,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                if (question.detail.isNotBlank()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        question.detail,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                    )
+                }
+                val current = picks[question.id].orEmpty()
+                question.options.forEach { option ->
+                    val selected = option.label in current
+                    Spacer(Modifier.height(6.dp))
+                    Surface(
+                        color = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                val next = when {
+                                    question.multiSelect ->
+                                        if (selected) current - option.label else current + option.label
+                                    else -> listOf(option.label)
+                                }
+                                picks[question.id] = next
+                                if (tapThrough) {
+                                    onAnswer(batch, mapOf(question.id to next))
+                                }
+                            },
+                    ) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            Text(
+                                option.label,
+                                fontSize = 13.sp,
+                                color = if (selected) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (option.description.isNotBlank()) {
+                                Text(
+                                    option.description,
+                                    fontSize = 10.sp,
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (question.options.isEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "这个选项批没有可点的选项；跳过会按“未选择”回传。",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
+                    )
+                }
+            }
+            if (!tapThrough) {
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { submit() },
+                        enabled = complete,
+                        modifier = Modifier.weight(1f),
+                    ) { Text("提交", fontSize = 13.sp) }
+                    OutlinedButton(
+                        onClick = {
+                            onAnswer(batch, batch.questions.associate { it.id to emptyList() })
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) { Text("跳过", fontSize = 13.sp) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Chip(text: String, onClick: () -> Unit, enabled: Boolean) {    Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(50),
         modifier = Modifier

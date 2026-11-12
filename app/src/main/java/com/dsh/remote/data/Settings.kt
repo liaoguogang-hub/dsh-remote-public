@@ -24,9 +24,12 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_THEME, null) ?: "Dark"
         set(value) = prefs.edit().putString(KEY_THEME, value).apply()
 
-    /** "Inter" (bundled, TRAE-like) or "System". */
+    /** "System" (default, always has CJK) or "Inter" (bundled, Latin-only). */
     var fontName: String
-        get() = prefs.getString(KEY_FONT, null) ?: "Inter"
+        // Inter ships Latin glyphs only (0 CJK codepoints), so making it the default left
+        // every Chinese label at the mercy of platform font fallback. Default to the platform
+        // family instead; Inter stays selectable for users who want that look.
+        get() = prefs.getString(KEY_FONT, null) ?: "System"
         set(value) = prefs.edit().putString(KEY_FONT, value).apply()
 
     /** Conversation scale; pinch-to-zoom in the transcript writes this. */

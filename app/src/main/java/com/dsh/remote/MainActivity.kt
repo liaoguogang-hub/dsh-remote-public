@@ -133,6 +133,7 @@ class MainActivity : ComponentActivity() {
                             onDisconnect = viewModel::disconnect,
                             onExit = { finish() },
                             onApproval = viewModel::respondApproval,
+                            onQuestionAnswer = viewModel::respondQuestion,
                             onDismissError = viewModel::dismissError,
                             onLoadEarlier = viewModel::loadEarlier,
                             onSessionQueryChange = viewModel::updateSessionQuery,

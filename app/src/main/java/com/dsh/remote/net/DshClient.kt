@@ -147,31 +147,76 @@ class DshClient {
     /**
      * Scan the phone's own /24 subnets for the desktop bridge and return its base URL.
      *
-     * The desktop machine's LAN address drifts (DHCP gave 192.168.0.129, then 192.168.43.69), so a
-     * hard-coded address baked into the APK goes stale. A TCP probe is enough: the bridge always
-     * listens on 0.0.0.0:<port>, and nothing else on a home network uses that port.
+     * The desktop machine's LAN address drifts (DHCP hands out a new one after a reboot or a
+     * network change), so a hard-coded address baked into the APK goes stale. A TCP probe is
+     * enough: the bridge always listens on 0.0.0.0:<port>, and nothing else on a home network
+     * uses that port.
      *
      * The port is not fixed either: 6300 is the default, but Windows can reserve it (Hyper-V/WinNAT
      * hold 6230-6329, and a bind there fails with EACCES), and the plugin then falls back to 6380
      * or 6400. So the common ports are tried in turn and the first live bridge wins.
+     *
+     * [preferred] is the URL the phone already has. When only the PORT moved (the IP is still the
+     * desktop's), the bridge is found by probing the same host on the other ports — no subnet scan
+     * needed. When the IP moved too (DHCP, still in the same /24), that /24 is swept FIRST; a phone
+     * often has several interfaces (Wi-Fi + Tailscale + cellular), and sweeping all of them was
+     * slow enough to blow the caller's budget.
      */
-    suspend fun discoverLanBase(ports: List<Int> = LAN_BRIDGE_PORTS): String? =
-        withContext(Dispatchers.IO) {
-            for (port in ports) {
-                for (prefix in localSubnetPrefixes()) {
-                    val candidates = (1..254).map { "$prefix.$it" }
-                    for (chunk in candidates.chunked(48)) {
-                        val hit = coroutineScope {
-                            chunk.map { ip ->
-                                async(Dispatchers.IO) { if (tcpReachable(ip, port)) ip else null }
-                            }.awaitAll().firstOrNull { it != null }
-                        }
-                        if (hit != null) return@withContext "http://$hit:$port"
-                    }
-                }
-            }
-            null
+    suspend fun discoverLanBase(
+        ports: List<Int> = LAN_BRIDGE_PORTS,
+        preferred: String? = null,
+    ): String? = withContext(Dispatchers.IO) {
+        val preferredUri = preferred
+            ?.let { runCatching { java.net.URI(normalizeBase(it)) }.getOrNull() }
+        val preferredHost = preferredUri?.host?.takeIf { it.isNotBlank() }
+        // The caller already probed `preferred` and found it dead, so re-probing its port would
+        // just burn another timeout. Try the other ports first.
+        val preferredPort = preferredUri?.port?.takeIf { it > 0 }
+        val orderedPorts = if (preferredPort != null && ports.contains(preferredPort)) {
+            ports.filter { it != preferredPort } + preferredPort
+        } else {
+            ports
         }
+
+        // Fast path 1: same host, different port.
+        if (preferredHost != null) {
+            for (port in orderedPorts) {
+                if (tcpReachable(preferredHost, port)) return@withContext "http://$preferredHost:$port"
+            }
+        }
+
+        // Fast path 2: same /24, any host. Tried before the full interface sweep.
+        val preferredPrefix = preferredHost
+            ?.split('.')
+            ?.takeIf { it.size == 4 }
+            ?.let { "${it[0]}.${it[1]}.${it[2]}" }
+
+        suspend fun sweep(prefix: String, port: Int): String? {
+            val candidates = (1..254).map { "$prefix.$it" }
+            for (chunk in candidates.chunked(48)) {
+                val hit = coroutineScope {
+                    chunk.map { ip ->
+                        async(Dispatchers.IO) { if (tcpReachable(ip, port)) ip else null }
+                    }.awaitAll().firstOrNull { it != null }
+                }
+                if (hit != null) return hit
+            }
+            return null
+        }
+
+        if (preferredPrefix != null) {
+            for (port in orderedPorts) {
+                sweep(preferredPrefix, port)?.let { return@withContext "http://$it:$port" }
+            }
+        }
+        for (port in orderedPorts) {
+            for (prefix in localSubnetPrefixes()) {
+                if (prefix == preferredPrefix) continue // already swept
+                sweep(prefix, port)?.let { return@withContext "http://$it:$port" }
+            }
+        }
+        null
+    }
 
     private fun localSubnetPrefixes(): List<String> {
         val prefixes = mutableListOf<String>()
@@ -190,12 +235,32 @@ class DshClient {
         return prefixes.distinct()
     }
 
-    private fun tcpReachable(host: String, port: Int): Boolean = runCatching {
+    /**
+     * Raw-socket reachability, with an explicit budget.
+     *
+     * 220ms was too tight on real phones: the first probe to an unseen host also pays ARP
+     * resolution and Wi-Fi power-save wakeup, so a LIVE bridge could time out and be skipped.
+     * [TcpScanTimeoutMs] is the value used for subnet scans, [ProbeTimeoutMs] for a single
+     * already-known address.
+     */
+    private fun tcpReachable(
+        host: String,
+        port: Int,
+        timeoutMs: Int = TcpScanTimeoutMs,
+    ): Boolean = runCatching {
         Socket().use { socket ->
-            socket.connect(InetSocketAddress(host, port), 220)
+            socket.connect(InetSocketAddress(host, port), timeoutMs)
             true
         }
     }.getOrDefault(false)
+
+    companion object {
+        /** Per-IP budget during a /24 sweep. */
+        const val TcpScanTimeoutMs = 600
+
+        /** Budget for probing one address the caller already believes in. */
+        const val ProbeTimeoutMs = 900
+    }
 
     /** What a pairing handshake yields: both transports plus the credential. */
     /**
@@ -264,10 +329,12 @@ class DshClient {
     /**
      * Fast TCP reachability check for a base URL.
      *
-     * Used to decide "same Wi-Fi or not": a LAN address that does not answer within ~400 ms is
-     * treated as unreachable, so the app falls through to the tunnel instead of hanging.
+     * Used to decide "same Wi-Fi or not": a LAN address that does not answer within the budget is
+     * treated as unreachable, so the app falls through to auto-discovery (or to the tunnel)
+     * instead of hanging. This is deliberately a raw Socket, never an OkHttp call, so the budget
+     * is honoured exactly — `retryOnConnectionFailure` would multiply it several times over.
      */
-    suspend fun reachable(base: String, timeoutMs: Int = 400): Boolean = withContext(Dispatchers.IO) {
+    suspend fun reachable(base: String, timeoutMs: Int = ProbeTimeoutMs): Boolean = withContext(Dispatchers.IO) {
         val uri = runCatching { java.net.URI(normalizeBase(base)) }.getOrNull() ?: return@withContext false
         val host = uri.host ?: return@withContext false
         val port = if (uri.port > 0) uri.port else if (uri.scheme == "https") 443 else 80
@@ -295,6 +362,29 @@ class DshClient {
                 put("clientId", clientId)
                 put("eventId", eventId)
                 put("outcome", JSONObject().put("kind", "result").put("value", outcome))
+            },
+        )
+    }
+
+    /**
+     * Answer a forwarded `user-questions/request` waterfall.
+     *
+     * The Host validates the reply as `{ answers: [{ id, selected: [label…] }] }`
+     * with exactly one entry per question of the batch, and treats an empty
+     * `selected` list as "skipped" rather than as an error.
+     */
+    suspend fun answerQuestion(clientId: String, eventId: String, answers: JSONArray) {
+        rpc(
+            "\$events/result",
+            JSONObject().apply {
+                put("clientId", clientId)
+                put("eventId", eventId)
+                put(
+                    "outcome",
+                    JSONObject()
+                        .put("kind", "result")
+                        .put("value", JSONObject().put("answers", answers)),
+                )
             },
         )
     }

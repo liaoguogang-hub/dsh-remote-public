@@ -22,6 +22,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.UUID
 
 enum class Role { USER, ASSISTANT, SYSTEM }
@@ -59,6 +60,44 @@ data class ApprovalRequest(
     val toolName: String,
     val reason: String,
     val callId: String = "",
+)
+
+/** One selectable choice inside a pending question. */
+data class QuestionOption(val label: String, val description: String)
+
+/**
+ * One question in a pending ask-user batch.
+ *
+ * `intent` is flattened into plain flags so the UI never has to interpret the
+ * Host's discriminator: an `approval` intent is a blocking permission decision
+ * with fixed approve/reject labels, a `plan-review` intent approves the plan by
+ * picking one named option, and everything else is an ordinary choice.
+ */
+data class QuestionItem(
+    val id: String,
+    val question: String,
+    val header: String,
+    val detail: String,
+    val options: List<QuestionOption>,
+    val multiSelect: Boolean,
+    /** Option label that grants (approval / plan-review intents), else "". */
+    val approveLabel: String = "",
+    /** Option label that refuses (approval intent only), else "". */
+    val rejectLabel: String = "",
+)
+
+/**
+ * A pending ask-user-question batch forwarded from the Host as a
+ * `user-questions/request` waterfall.
+ *
+ * The Host settles this event only after receiving one answer per question, so
+ * the card must collect a selection for every [QuestionItem] before replying.
+ */
+data class QuestionRequest(
+    val eventId: String,
+    val agentId: String,
+    val callId: String,
+    val questions: List<QuestionItem>,
 )
 
 /** A desktop workspace and the sessions it accounts for, in manual order. */
@@ -113,9 +152,11 @@ data class ChatUiState(
     /** "default" (隐藏已归档) | "show" (全部对话) | "only" (仅显示已归档). */
     val archivedFilter: String = "default",
     val theme: ThemeMode = ThemeMode.Dark,
-    val fontChoice: FontChoice = FontChoice.Inter,
+    val fontChoice: FontChoice = FontChoice.System,
     val fontScale: Float = 1.0f,
     val pendingApprovals: List<ApprovalRequest> = emptyList(),
+    /** Pending ask-user question batches; the Host blocks until each is answered. */
+    val pendingQuestions: List<QuestionRequest> = emptyList(),
     /** Durable seq + prompt per turn — drives the turn rail and the jump sheet. */
     val turns: List<TurnEntry> = emptyList(),
 ) {
@@ -159,6 +200,20 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         /** Upper bound for one connect attempt: bridge up but silent must not hang the UI. */
         const val CONNECT_TIMEOUT_MS = 20_000L
+
+        /**
+         * How long a raw-socket probe gets to decide "this address answers at all".
+         *
+         * Never probe with an OkHttp call here: `connectTimeout` is 20s and
+         * `retryOnConnectionFailure` is on by default, so ONE ping against a dead port can cost
+         * several connect timeouts — more than the whole [CONNECT_TIMEOUT_MS] budget. That is how
+         * a phone whose stored LAN port was stale used to fall through to the tunnel without ever
+         * running auto-discovery. A bare Socket honours the timeout exactly.
+         */
+        const val LAN_PROBE_MS = 900
+
+        /** Budget for the LAN subnet scan, spent OUTSIDE the connect budget. */
+        const val LAN_DISCOVER_BUDGET_MS = 12_000L
     }
 
     /** Debounced `session/search` for the drawer query. */
@@ -182,7 +237,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         val mode = settings.mode
         val theme = runCatching { ThemeMode.valueOf(settings.themeName) }.getOrDefault(ThemeMode.Dark)
-        val font = runCatching { FontChoice.valueOf(settings.fontName) }.getOrDefault(FontChoice.Inter)
+        val font = runCatching { FontChoice.valueOf(settings.fontName) }.getOrDefault(FontChoice.System)
         val cachedSessions = readCachedSessions()
         // Prefer the newest cached Session so a cold start paints the conversation the user
         // was last active in, and falls back to the recorded id when the cache is stale.
@@ -411,13 +466,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             is String -> node.trim().takeIf { it.isNotEmpty() }?.let(lanList::add)
         }
         // The public build ignores `r` (self-hosted relay): that transport belongs to the self-use
-        // setup, and leaking it into this app would fill 「自定义」 with someone else's server.
+        // setup, and leaking it into this app would fill the custom tab with someone else's server.
         val tunnelInQr = parsed.optString("u").trim().ifEmpty { null }
         val code = parsed.optString("c").trim()
         if (code.isEmpty()) {
             return _state.update { it.copy(error = "这不是 DSH Remote 的配对码") }
         }
-        // v4: no address in the QR, so redeem against any reachable base — the PC answers with the
+        // v4: no address in the QR, so redeem against any reachable base -- the PC answers with the
         // LAN list and the tunnel that belong to this build.
         val bootstrap = lanList.firstOrNull() ?: tunnelInQr
         if (bootstrap == null) {
@@ -433,9 +488,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(connecting = true, error = null) }
             try {
                 val result = client.redeemPairing(bootstrap, code, "public")
-                val lanCandidates = (result.lan.ifEmpty { lanList }).distinct()
+                val lanCandidates = (result.lan.ifEmpty { lanList}).distinct()
                 // Only the redeem response may fill the tabs: it is filtered by this build's view
-                // (public → LAN + ngrok). The QR's own addresses are bootstrap hints, not answers.
+                // (public -> LAN + ngrok). The QR's own addresses are bootstrap hints, not answers.
                 val tunnelUrl = result.tunnel
 
                 // Two transports only: LAN (first one that answers) and the auto tunnel.
@@ -492,9 +547,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         connectJob = viewModelScope.launch {
             _state.update { it.copy(connecting = true, error = null, mode = mode, urlDraft = url, tokenDraft = token) }
             try {
+                // Pick a LAN address that actually answers BEFORE the connect budget starts.
+                // Doing it inside establish() meant a stale port could eat the entire 20s budget
+                // inside OkHttp and leave auto-discovery no room to run (see LAN_PROBE_MS).
+                val target = if (mode == ConnectMode.Lan) resolveLanUrl(url) else url
                 // A dead bridge can accept the socket and never answer, which used to leave the
                 // spinner up forever. Cap the attempt so it always ends in either success or error.
-                withTimeout(CONNECT_TIMEOUT_MS) { establish(mode, url, token, restoreSession = true) }
+                withTimeout(CONNECT_TIMEOUT_MS) { establish(mode, target, token, restoreSession = true) }
             } catch (t: Throwable) {
                 client.reset()
                 // LAN-first policy: when the private address stops answering (left the house, changed
@@ -526,6 +585,64 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Return a LAN address that is known to answer, correcting a stale host or port.
+     *
+     * The desktop's LAN IP drifts (DHCP) and the bridge PORT drifts too: the plugin falls back
+     * from 6300 to 6380/6400 because Windows reserves 6230-6329 for Hyper-V/WinNAT. So a phone
+     * holding an old value points at a port where nothing listens — TCP is refused fast, yet the
+     * app used to learn that only via OkHttp, whose retries can outlast the whole connect budget.
+     *
+     * Candidates are ordered cheapest-to-most-expensive and the FIRST one that answers wins:
+     *  1. what the phone has configured (a previous successful address),
+     *  2. the address baked into THIS build (the version verified against the current bridge) —
+     *     this is what rescues a hand-typed stale value like `...:6300`,
+     *  3. the same host on the other bridge ports,
+     *  4. a subnet sweep that also handles a DHCP-changed IP.
+     *
+     * Reachability is decided with a raw socket ([DshClient.reachable]) under a fixed budget; the
+     * scan runs outside the connect budget so the credential handshake can never starve it.
+     */
+    private suspend fun resolveLanUrl(configured: String): String {
+        val url = configured.trim()
+        val candidates = LinkedHashSet<String>()
+        if (url.isNotBlank()) candidates += url
+
+        // The build-time address is the one this APK was verified against. Trying it costs one
+        // probe and rescues the most common mistake: a hand-typed stale port.
+        val builtin = com.dsh.remote.data.DshDefaults.LAN_URL.trim()
+        if (builtin.isNotBlank()) candidates += builtin
+
+        // Same host, the other ports the plugin can fall back to.
+        val host = runCatching {
+            java.net.URI(client.normalizeBase(url.ifBlank { builtin })).host
+        }.getOrNull()
+        if (host != null) {
+            for (port in com.dsh.remote.net.LAN_BRIDGE_PORTS) candidates += "http://$host:$port"
+        }
+
+        for (candidate in candidates) {
+            if (runCatching { client.reachable(candidate, LAN_PROBE_MS) }.getOrDefault(false)) {
+                return adopt(candidate, url)
+            }
+        }
+
+        // Nothing answers: the IP may have moved within the subnet. Sweep for the live bridge.
+        val found = withTimeoutOrNull(LAN_DISCOVER_BUDGET_MS) {
+            runCatching { client.discoverLanBase(preferred = url.ifBlank { builtin }) }.getOrNull()
+        }
+        return found?.let { adopt(it, url) } ?: url
+    }
+
+    /** Remember a corrected LAN address so the next launch does not repeat the search. */
+    private fun adopt(candidate: String, previous: String): String {
+        if (candidate != previous) {
+            settings.remember(ConnectMode.Lan, candidate, settings.token(ConnectMode.Lan))
+            _state.update { it.copy(urlDraft = candidate) }
+        }
+        return candidate
+    }
+
+    /**
      * Authenticate, open the mux and (optionally) restore the conversation.
      *
      * Split out of [connect] so that a backgrounded app whose socket was killed by Android can
@@ -552,23 +669,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // to 127.0.0.1:1815), so Custom mode can authenticate without a launch token.
         val builtin = com.dsh.remote.data.DshDefaults.AUTH_COOKIE
 
-        // The PC's LAN address drifts (DHCP), so a stale hard-coded address would fail.
-        // Probe the configured address first; if it is dead, scan the local subnet for
-        // the bridge and adopt whatever address it is on now.
-        var effectiveUrl = url
-        if (mode == ConnectMode.Lan && seed.isNotEmpty()) {
-            val alive = runCatching {
-                client.useCookie(effectiveUrl, seed)
-                client.ping()
-            }.isSuccess
-            if (!alive) {
-                val found = runCatching { client.discoverLanBase() }.getOrNull()
-                if (found != null) {
-                    effectiveUrl = found
-                    client.useCookie(found, seed)
-                    settings.saveCookie(found, seed)
-                    _state.update { it.copy(urlDraft = found) }
-                }
+        // Address correction happens in connect() (resolveLanUrl), outside the connect budget:
+        // probing here would let OkHttp's retries eat the whole budget before the scan could run.
+        // What is left to do is refuse to spend that budget on an address that cannot answer.
+        val effectiveUrl = url
+        if (mode == ConnectMode.Lan) {
+            val answers = runCatching { client.reachable(effectiveUrl, LAN_PROBE_MS) }.getOrDefault(false)
+            if (!answers) {
+                throw IOException(
+                    "连不上 $effectiveUrl（TCP ${LAN_PROBE_MS}ms 内无响应）。" +
+                        "局域网档要求手机与电脑在同一 Wi-Fi，且地址端口与电脑一致。" +
+                        "电脑上核对：curl http://127.0.0.1:6380/_dsh-remote/health"
+                )
             }
         }
 
@@ -595,6 +707,20 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             if (authed) settings.saveCookie(effectiveUrl, builtin)
         }
         if (!authed) {
+            // The launch-token path only works when there IS a launch token. LAN mode has none
+            // (the bridge authenticates by cookie), so trying it here would always fail with 401
+            // and blame the token — which is not the actual problem. Say what really happened.
+            if (token.isBlank()) {
+                throw IOException(
+                    if (mode == ConnectMode.Lan)
+                        "连不上电脑端的局域网桥接：请确认手机与电脑连的是同一个 Wi-Fi，" +
+                            "且 App 里的地址端口与电脑上的一致（当前 $effectiveUrl）。" +
+                            "电脑上查询：curl http://127.0.0.1:6380/_dsh-remote/health"
+                    else
+                        "认证失败：地址 $effectiveUrl 没有接受内置凭据，" +
+                            "请点右上角扫码重新配对"
+                )
+            }
             val fresh = client.mintBrowserCookie(effectiveUrl, token)
             settings.saveCookie(effectiveUrl, fresh)
         }
@@ -760,8 +886,25 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 messages = cached.ifEmpty { emptyList() },
                 streaming = "",
                 running = false,
+                // The previous conversation's pending cards belong to that
+                // conversation. Drop them here; the cards for the session we
+                // just opened come back from the Host on the re-opened
+                // `$events` stream below.
+                pendingApprovals = emptyList(),
+                pendingQuestions = emptyList(),
             )
         }
+        // Switch to another conversation: re-subscribe to the forwarded-event
+        // stream. The Host replays a still-pending ask_user_question /
+        // approval to every client that subscribes, so this is what surfaces a
+        // pending card for the session we just opened. Without it the card
+        // stayed invisible until the app was restarted, because the waterfall
+        // had already been delivered to the previous `$events` subscription.
+        //
+        // This runs AFTER the state reset above on purpose: a replayed waterfall
+        // can arrive within the same round trip, and it must not be wiped by
+        // the reset that clears the previous session's cards.
+        openApprovalStream()
     }
 
     /**
@@ -848,15 +991,37 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * The `$events` logical stream carries forwarded Host waterfalls. Tool approvals arrive here
-     * as `approval/request`; the answer goes back over `$events/result`.
+     * The `$events` logical stream carries forwarded Host waterfalls. Two of them
+     * block the turn until a client answers:
+     *
+     *   approval/request        tool permission, allowed-once | rejected
+     *   user-questions/request  ask_user_question; needs one answer per question
+     *
+     * Both are answered through `$events/result`, and the Host forwards them to
+     * the clients that have this stream open. The Host REPLAYS a still-pending
+     * waterfall to every client that subscribes, so opening the stream again is
+     * how a client picks up a question that was raised before it subscribed.
      */
     private fun openApprovalStream() {
         ensureMux()
         eventsStreamId?.let { runCatching { client.cancelStream(it) } }
-        val streamId = "events"
+        val streamId = "events-" + UUID.randomUUID().toString().take(8)
         eventsStreamId = streamId
         client.openStream(streamId, "\$events", JSONObject())
+    }
+
+    /**
+     * True when a waterfall belongs to the session the user is looking at.
+     *
+     * The Host tags every forwarded event with the Agent identity it came from,
+     * and for a conversation that identity is the session id. Events from other
+     * sessions (background Agents, subagents) must not hijack this chat's
+     * composer, but they are still recorded so the badge count stays truthful
+     * — we simply drop them rather than misattribute them.
+     */
+    private fun ownsEvent(agentId: String): Boolean {
+        val current = _state.value.sessionId ?: return true
+        return agentId.isEmpty() || agentId == current
     }
 
     private fun handleEventFrame(frame: JSONObject) {
@@ -864,25 +1029,176 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val value = frame.optJSONObject("value") ?: return
         when (value.optString("type")) {
             "ready" -> eventsClientId = value.optString("clientId")
-            "waterfall" -> {
-                if (value.optString("event") != "approval/request") return
-                val request = value.optJSONObject("request") ?: JSONObject()
-                // The Host sends a localised displayReason alongside the raw reason; prefer it.
-                val display = request.optJSONObject("displayReason")
-                val localized = display?.optString("zh").orEmpty()
-                    .ifEmpty { display?.optString("en").orEmpty() }
-                val item = ApprovalRequest(
-                    eventId = value.optString("eventId"),
-                    agentId = value.optString("agentId"),
-                    toolName = request.optString("toolName").ifEmpty { "工具调用" },
-                    reason = localized.ifEmpty { request.optString("reason") },
-                    callId = request.optString("callId"),
-                )
-                if (item.eventId.isEmpty()) return
-                _state.update { s ->
-                    if (s.pendingApprovals.any { it.eventId == item.eventId }) s
-                    else s.copy(pendingApprovals = s.pendingApprovals + item)
+            "waterfall" -> when (value.optString("event")) {
+                "approval/request" -> handleApprovalRequest(value)
+                "user-questions/request" -> handleQuestionRequest(value)
+            }
+            // Broadcast to every client that was delivered a waterfall once any
+            // ONE of them answers (the Host settles the event and removes the
+            // other deliveries). Without this the card stays on screen after it
+            // was answered elsewhere — on another phone, or in the desktop
+            // window — and looks like a prompt that refuses to go away.
+            "cancel" -> {
+                val eventId = value.optString("eventId")
+                if (eventId.isNotEmpty()) dismissPendingEvent(eventId)
+            }
+        }
+    }
+
+    /** Drop a pending approval and/or question batch by the Host event that produced it. */
+    private fun dismissPendingEvent(eventId: String) {
+        _state.update { s ->
+            val approvals = s.pendingApprovals.filterNot { it.eventId == eventId }
+            val questions = s.pendingQuestions.filterNot { it.eventId == eventId }
+            if (approvals.size == s.pendingApprovals.size && questions.size == s.pendingQuestions.size) {
+                s
+            } else {
+                s.copy(pendingApprovals = approvals, pendingQuestions = questions)
+            }
+        }
+    }
+
+    private fun handleApprovalRequest(value: JSONObject) {
+        val agentId = value.optString("agentId")
+        if (!ownsEvent(agentId)) return
+        val request = value.optJSONObject("request") ?: JSONObject()
+        // The Host sends a localised displayReason alongside the raw reason; prefer it.
+        val display = request.optJSONObject("displayReason")
+        val localized = display?.optString("zh").orEmpty()
+            .ifEmpty { display?.optString("en").orEmpty() }
+        val item = ApprovalRequest(
+            eventId = value.optString("eventId"),
+            agentId = agentId,
+            toolName = request.optString("toolName").ifEmpty { "工具调用" },
+            reason = localized.ifEmpty { request.optString("reason") },
+            callId = request.optString("callId"),
+        )
+        if (item.eventId.isEmpty()) return
+        _state.update { s ->
+            if (s.pendingApprovals.any { it.eventId == item.eventId }) s
+            else s.copy(pendingApprovals = s.pendingApprovals + item)
+        }
+    }
+
+    /** Parse `user-questions/request` into a renderable batch. */
+    private fun handleQuestionRequest(value: JSONObject) {
+        val agentId = value.optString("agentId")
+        if (!ownsEvent(agentId)) return
+        val eventId = value.optString("eventId")
+        if (eventId.isEmpty()) return
+        val request = value.optJSONObject("request") ?: JSONObject()
+        val parsed = parseQuestionBatch(request) ?: return
+        // The batch carries its tool-call correlation under `wait.callId`.
+        val callId = request.optJSONObject("wait")?.optString("callId").orEmpty()
+            .ifEmpty { request.optString("callId") }
+        val item = QuestionRequest(
+            eventId = eventId,
+            agentId = agentId,
+            callId = callId,
+            questions = parsed,
+        )
+        _state.update { s ->
+            if (s.pendingQuestions.any { it.eventId == eventId }) s
+            else s.copy(pendingQuestions = s.pendingQuestions + item)
+        }
+    }
+
+    /** Read the `{ questions: [...] }` payload shared by the waterfall and the projection. */
+    private fun parseQuestionBatch(request: JSONObject): List<QuestionItem>? {
+        val array = request.optJSONArray("questions") ?: return null
+        val out = ArrayList<QuestionItem>(array.length())
+        for (index in 0 until array.length()) {
+            val raw = array.optJSONObject(index) ?: continue
+            val id = raw.optString("id")
+            if (id.isEmpty()) continue
+            val intent = raw.optJSONObject("intent")
+            val intentKind = intent?.optString("kind").orEmpty()
+            val display = intent?.optJSONObject("display")
+
+            // Localised text when the approval intent carries one.
+            fun localised(node: JSONObject?): String {
+                if (node == null) return ""
+                return node.optString("zh").ifEmpty { node.optString("en") }
+            }
+
+            val question = raw.optString("question")
+                .ifEmpty { localised(display?.optJSONObject("question")) }
+                .ifEmpty { if (intentKind == "approval") "是否允许这个操作？" else "" }
+
+            val options = ArrayList<QuestionOption>()
+            raw.optJSONArray("options")?.let { opts ->
+                for (i in 0 until opts.length()) {
+                    val option = opts.optJSONObject(i) ?: continue
+                    val label = option.optString("label")
+                    if (label.isEmpty()) continue
+                    options += QuestionOption(label, option.optString("description"))
                 }
+            }
+
+            // Fixed-action intents name their labels instead of carrying `options`.
+            val approveLabel = intent?.optString("approve").orEmpty()
+            val rejectLabel = intent?.optString("reject").orEmpty()
+            val alwaysLabel = intent?.optString("always").orEmpty()
+
+            if (options.isEmpty()) {
+                when (intentKind) {
+                    "approval" -> {
+                        if (approveLabel.isNotEmpty()) {
+                            options += QuestionOption(
+                                localised(display?.optJSONObject("approve")).ifEmpty { approveLabel },
+                                "",
+                            )
+                        }
+                        if (rejectLabel.isNotEmpty()) options += QuestionOption(rejectLabel, "")
+                        if (alwaysLabel.isNotEmpty()) options += QuestionOption(alwaysLabel, "")
+                    }
+                    "plan-review" -> if (approveLabel.isNotEmpty()) {
+                        options += QuestionOption(approveLabel, "")
+                    }
+                }
+            }
+
+            out += QuestionItem(
+                id = id,
+                question = question,
+                header = raw.optString("header"),
+                detail = raw.optString("detail").ifEmpty { localised(display?.optJSONObject("detail")) },
+                options = options,
+                multiSelect = raw.optBoolean("multiSelect", false),
+                approveLabel = approveLabel,
+                rejectLabel = rejectLabel,
+            )
+        }
+        return out.ifEmpty { null }
+    }
+
+    /**
+     * Answer a pending question batch.
+     *
+     * [selected] maps question id to the chosen option labels. The Host validates
+     * that the reply carries exactly one entry per question, so every question
+     * must be present (an empty list is a legitimate "skipped" answer).
+     */
+    fun respondQuestion(request: QuestionRequest, selected: Map<String, List<String>>) {
+        val clientId = eventsClientId
+        _state.update { s ->
+            s.copy(pendingQuestions = s.pendingQuestions.filterNot { it.eventId == request.eventId })
+        }
+        if (clientId == null) return
+        viewModelScope.launch {
+            runCatching {
+                val answers = JSONArray()
+                for (question in request.questions) {
+                    answers.put(
+                        JSONObject().apply {
+                            put("id", question.id)
+                            put("selected", JSONArray(selected[question.id].orEmpty()))
+                        },
+                    )
+                }
+                client.answerQuestion(clientId, request.eventId, answers)
+            }.onFailure { t ->
+                _state.update { it.copy(error = t.message ?: "选项回传失败") }
             }
         }
     }
