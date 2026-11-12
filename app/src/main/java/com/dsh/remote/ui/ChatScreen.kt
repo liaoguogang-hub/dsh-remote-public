@@ -164,21 +164,68 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    // Auto-scroll to the newest message, but not when older history was just prepended:
-    // that would yank the user away from what they were reading.
+    // Auto-scroll to the newest message.
+    //
+    // Two different things change the head of the transcript, and they need opposite
+    // answers:
+    //   * opening another conversation -> JUMP to the bottom (that is the point of
+    //     opening a conversation: pick the thread up where it ended);
+    //   * "加载更早的消息" -> KEEP the reading position, because prepending older
+    //     history must not yank the user away from what they were reading.
+    //
+    // Both used to be told apart by "the first key changed", which cannot separate
+    // them: switching conversation changes the first key exactly as prepending does.
+    // The session id is what actually tells the two apart, so that is what is tracked
+    // here.
+    //
+    // Opening a conversation is not one frame: the session id changes first (the
+    // transcript is still the previous one, or a cached copy), and the Host's snapshot
+    // with the real messages arrives later. The jump therefore cannot be a one-shot
+    // reaction to the id change -- it has to stay armed until the NEW transcript is
+    // in place. `jumpSession` holds the session that is waiting for its jump, and
+    // `jumpArmed` says whether that jump still has to happen.
+    var lastSessionId by remember { mutableStateOf<String?>(null) }
     var lastFirstKey by remember { mutableStateOf<String?>(null) }
+    var jumpSession by remember { mutableStateOf<String?>(null) }
+    var jumpArmed by remember { mutableStateOf(false) }
     // Item order inside the transcript LazyColumn:
     //   [load_earlier?] + messages + [streaming?] + approvals + questions
     val interruptCount = state.pendingApprovals.size + state.pendingQuestions.size
     val lastItemIndex = (state.messages.size +
         (if (state.streaming.isNotEmpty()) 1 else 0) +
         interruptCount) - 1
+    // A conversation was opened: arm the jump to the bottom. The scroll itself happens
+    // in the effect below, once the new transcript is in place.
+    LaunchedEffect(state.sessionId) {
+        if (lastSessionId != state.sessionId) {
+            lastSessionId = state.sessionId
+            jumpSession = state.sessionId
+            jumpArmed = true
+            // Clear the old transcript's head marker, so the next effect does not read
+            // the previous conversation's first key as a "prepend".
+            lastFirstKey = null
+        }
+    }
     LaunchedEffect(state.messages.size, state.streaming, state.messages.firstOrNull()?.key) {
         val firstKey = state.messages.firstOrNull()?.key
-        val prepended = lastFirstKey != null && firstKey != lastFirstKey
+        // Older history prepended into the SAME conversation: keep the position.
+        // (A conversation switch is not a prepend, and is handled by the jump below.)
+        val prepended = !jumpArmed && lastFirstKey != null && firstKey != lastFirstKey
         lastFirstKey = firstKey
         if (prepended) return@LaunchedEffect
-        if (lastItemIndex >= 0) runCatching { listState.animateScrollToItem(lastItemIndex) }
+        if (lastItemIndex < 0) return@LaunchedEffect
+        // A freshly opened conversation must land on its newest message. The item may
+        // not be measured yet on the very first pass, so the scroll is retried once
+        // the layout settles instead of trusting a single shot.
+        if (jumpArmed && jumpSession == state.sessionId) {
+            runCatching { listState.scrollToItem(lastItemIndex) }
+            runCatching { listState.animateScrollToItem(lastItemIndex) }
+            // The jump is done for this conversation. A later message (a new reply, a
+            // prepended page) falls back to the ordinary "follow the tail" behaviour.
+            jumpArmed = false
+        } else {
+            runCatching { listState.animateScrollToItem(lastItemIndex) }
+        }
     }
 
     // A pending question/approval is a blocking prompt the user must answer, so it
