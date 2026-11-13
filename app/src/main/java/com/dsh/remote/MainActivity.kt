@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Android freezes backgrounded apps, which kills the mux socket. Whenever the app comes
-        // back to the foreground, rebuild the link if it is gone 閳?silently, keeping the session.
+        // back to the foreground, rebuild the link if it is gone, silently, keeping the session.
         lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_RESUME) viewModel.reconnectIfNeeded()

@@ -34,9 +34,9 @@ Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 
 ## 下载手机端 App
 
-**DSH Remote v4.22.1** · Android 8.0 (API 26) 及以上 · 2.8 MB
+**DSH Remote v4.25.4** · Android 8.0 (API 26) 及以上 · 2.8 MB
 
-[⬇️ 下载 APK](https://github.com/liaoguogang-hub/dsh-remote-public/releases/download/v4.22.1/DSH-Remote-v4.22.1.apk) ·
+[⬇️ 下载 APK](https://github.com/liaoguogang-hub/dsh-remote-public/releases/download/v4.25.4/DSH-Remote-v4.25.4.apk) ·
 [全部版本](https://github.com/liaoguogang-hub/dsh-remote-public/releases)
 
 安装后应用名「DSH Remote」，包名 `com.dsh.remote.ngrok`（可与作者的 `DSH` 自用版共存）。
@@ -68,6 +68,9 @@ Kotlin/Compose 直连 DSH 自带的 HTTP API + WebSocket 网关。
 | 模型选择（分组目录 + 切换） | ✅ |
 | 权限模式 | ⚠️ 只能读取当前值（DSH 未开放远程切换权限的接口） |
 | 自定义地址历史（点选填入 / 删除） | ✅ |
+| 工具审批卡片（远程批准 / 拒绝 Host 发起的权限请求） | ✅ |
+| 提问卡片（Host 反问时在手机上作答，可多选） | ✅ |
+| 打开对话自动跳到最后一条消息 | ✅ |
 
 ## 三步连上（推荐：一键脚本）
 
