@@ -241,15 +241,26 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val cachedSessions = readCachedSessions()
         // Prefer the newest cached Session so a cold start paints the conversation the user
         // was last active in, and falls back to the recorded id when the cache is stale.
-        val lastSession = cachedSessions
+        //
+        // Blank rows are excluded here for the same reason the drawer hides them: an empty
+        // Session is not a conversation, and painting one made a cold start look like the app
+        // had just created it. If the cache holds nothing usable, fall through to the id we
+        // recorded last time and let the live refresh (in establish) correct it.
+        val cachedNewest = cachedSessions
             .filter { it.origin != "subagent" && !it.blank }
             .maxByOrNull { it.updatedAt }
             ?.id
-            ?: settings.lastSessionId
+        // Only reuse the recorded id if the cache still lists the row, or if there is no cache
+        // to contradict it; otherwise the cache-first paint would show a Session the drawer has
+        // already dropped (deleted or archived on the desktop).
+        val lastSession: String? = cachedNewest
+            ?: settings.lastSessionId.takeIf { it.isNotBlank() }
+                ?.takeIf { id -> cachedSessions.isEmpty() || cachedSessions.any { it.id == id } }
         // Cache-first paint: if we already know the list (and optionally a transcript), show the
         // conversation immediately and let `connect` fill in the live data behind it.
         val cacheReady = settings.isConfigured() &&
             cachedSessions.isNotEmpty() &&
+            lastSession != null &&
             cachedSessions.any { it.id == lastSession }
         _state.update {
             it.copy(
@@ -266,6 +277,17 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 archivedFilter = settings.sessionArchivedFilter,
                 screen = if (cacheReady) Screen.Chat else it.screen,
                 sessionId = if (cacheReady) lastSession else it.sessionId,
+                // Paint the header in the SAME composition as the transcript. Leaving it blank
+                // for the first frames is what showed "新对话" over a conversation that was
+                // about to load: the header renders an empty title as "新对话", and on a slow
+                // link that placeholder stayed up for a second or two. The cached list already
+                // knows the title, so there is nothing to wait for.
+                sessionTitle = if (cacheReady) {
+                    cachedSessions.firstOrNull { it.id == lastSession }?.title.orEmpty()
+                        .ifEmpty { settings.lastSessionTitle }
+                } else {
+                    it.sessionTitle
+                },
                 messages = if (cacheReady) readCachedMessages(lastSession) else it.messages,
             )
         }
@@ -732,6 +754,20 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(connecting = false, connected = true, error = null) }
             return
         }
+        // Open the conversation BEFORE fetching the catalogs.
+        //
+        // The four round trips below are independent, so they are issued together — but they
+        // still used to be awaited before the follow was opened. Anything slow in that group
+        // (the session list is ~773 KB) therefore held the app on "同步中…" with a blank
+        // header, which renders as "新对话": the exact symptom this change is meant to remove.
+        //
+        // The target is known without the network in the common case (the cache and the id
+        // recorded last time), so follow first and paint, then let the live list correct it.
+        val earlyTarget = recentSessionId() ?: settings.lastSessionId.takeIf { it.isNotBlank() }
+        if (earlyTarget != null) {
+            followSession(earlyTarget)
+            _state.update { it.copy(screen = Screen.Chat, connecting = false, connected = true, error = null) }
+        }
         // Four independent round trips: run them together. Sequentially they cost 4x the RTT,
         // which on mobile (~300-500ms) dominated the "connecting" spinner.
         coroutineScope {
@@ -742,10 +778,38 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             workspaces.await(); sessions.await(); models.await(); permissions.await()
         }
 
-        // Opening the app should land on the conversation that moved most recently, not on
-        // whatever the workspace order happens to put first.
-        val target = newestSessionId() ?: createSession()
-        followSession(target)
+        // Opening the app must land on the conversation that moved most recently, not on
+        // whatever the workspace order happens to put first — and never on a brand-new one.
+        //
+        // Why never a brand-new one: creating here used to be a silent side effect of merely
+        // opening the app. Every cold start minted an empty Session on the Host (they piled up
+        // as rows titled "新对话" in the desktop sidebar, one per launch), and a fresh Session
+        // is the newest row by definition, so the next launch picked THAT as the target — a
+        // self-feeding loop that parked the phone on a blank screen.
+        //
+        // A Session is created only when the user actually starts a conversation (see send);
+        // opening the app just reflects what already exists.
+        //
+        // If the live list came back empty (the call failed, or every row was filtered out),
+        // fall back to the Session this phone opened last instead of giving up: the drawer may
+        // simply not have refreshed yet, while the id we remembered is still perfectly valid.
+        val target = recentSessionId() ?: settings.lastSessionId.takeIf { it.isNotBlank() }
+        when {
+            // Already following it: the early follow above won, and re-opening would only
+            // tear down a stream that may have started delivering the snapshot.
+            target != null && target == earlyTarget -> Unit
+            target != null -> followSession(target)
+            // The list came back with nothing usable. Keep whatever is on screen (the early
+            // follow may already be showing the remembered conversation); only fall back to
+            // the empty state when there is genuinely nothing to show.
+            earlyTarget == null -> {
+                // Nothing on the Host to show (a truly fresh install): stay on the empty state
+                // and let the first message create the Session. sessionId stays null on purpose.
+                _state.update {
+                    it.copy(sessionId = null, sessionTitle = "", messages = emptyList(), hasMore = false)
+                }
+            }
+        }
         // A custom address that just authenticated is worth remembering for next time.
         if (mode == ConnectMode.Custom) {
             runCatching { settings.addCustomUrl(effectiveUrl) }
@@ -880,9 +944,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
         }.getOrDefault(emptyList())
+        // Fill the header in the same frame the id changes. Waiting for the Host snapshot left
+        // the title blank for a moment, and a blank title renders as "新对话" — which read as
+        // "the app just created an empty conversation" on every cold start.
+        //
+        // Three sources, because none is guaranteed this early: the in-memory list (populated
+        // once the live refresh lands), the on-disk mirror (populated by the PREVIOUS run, which
+        // is exactly what a cold start needs), and the recorded title last.
+        val knownTitle = _state.value.sessions.firstOrNull { it.id == sessionId }?.title.orEmpty()
+            .ifEmpty { readCachedSessions().firstOrNull { it.id == sessionId }?.title.orEmpty() }
+            .ifEmpty { settings.lastSessionTitle }
+        if (knownTitle.isNotEmpty()) settings.lastSessionTitle = knownTitle
         _state.update {
             it.copy(
                 sessionId = sessionId,
+                sessionTitle = knownTitle,
                 messages = cached.ifEmpty { emptyList() },
                 streaming = "",
                 running = false,
@@ -1294,7 +1370,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         earliestSeq = oldest
         val hasMore = value.optBoolean("hasMore", false)
         val values = projectionValues(value)
-        val title = values?.optString("title").orEmpty()
+        // A session the Host has not titled yet projects `title: null`, which optString turns
+        // into the literal "null" or an empty string. Treat both as "no title info" and keep
+        // whatever the drawer already knew: overwriting it with "" rendered the header as
+        // "新对话" on a conversation that plainly had messages in it.
+        val rawTitle = values?.optString("title").orEmpty()
+        val title = if (rawTitle == "null") "" else rawTitle
         val perm = values?.optJSONObject("permissions")?.optString("currentValue").orEmpty()
         val modelId = values?.optJSONObject("modelSelection")?.optJSONObject("lastUsed")?.optString("model").orEmpty()
         val turnEntries = mutableListOf<TurnEntry>()
@@ -1311,7 +1392,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             it.copy(
                 sessionId = sessionId.ifEmpty { it.sessionId },
-                sessionTitle = if (title == "null") "" else title,
+                sessionTitle = title.ifEmpty { it.sessionTitle },
                 cwd = cwd.ifEmpty { it.cwd },
                 permissionCurrent = if (perm.isEmpty()) it.permissionCurrent else perm,
                 modelLabel = if (modelId.isEmpty()) it.modelLabel else friendlyModel(modelId),
@@ -1420,7 +1501,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
             "session/title" -> {
                 val title = data.optString("title")
-                if (title.isNotEmpty()) _state.update { it.copy(sessionTitle = title) }
+                if (title.isNotEmpty()) {
+                    _state.update { it.copy(sessionTitle = title) }
+                    settings.lastSessionTitle = title
+                }
             }
 
             "permission/preset" -> {
@@ -1557,16 +1641,27 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------------------------------------------------------- drawer view options
 
     /**
-     * The Session the app should open by default: newest `updatedAt` among the rows the drawer
-     * would show (subagent, archived and blank rows excluded, exactly like the desktop).
+     * The Session the app should open on launch — the nearest thing to "the conversation I was
+     * just in", and never a new one.
+     *
+     * Candidates are the rows the drawer would show, filtered exactly like the desktop sidebar:
+     * subagent rows belong to their parent, archived rows are hidden, and blank rows are not
+     * conversations at all. Among those, the Session the user last opened on this phone wins
+     * (that is literally "回到刚才那个对话"); if it is gone — deleted on the desktop, archived,
+     * still running under a different id — fall back to the most recently updated one, which is
+     * what the desktop sidebar would put on top.
      */
-    private fun newestSessionId(): String? {
+    private fun recentSessionId(): String? {
         val s = _state.value
-        return s.sessions
-            .asSequence()
-            .filter { it.origin != "subagent" && it.id !in s.archived && !it.blank }
-            .maxByOrNull { it.updatedAt }
-            ?.id
+        val candidates = s.sessions.filter {
+            it.origin != "subagent" && it.id !in s.archived && !it.blank
+        }
+        if (candidates.isEmpty()) return null
+        val remembered = settings.lastSessionId
+        if (remembered.isNotEmpty()) {
+            candidates.firstOrNull { it.id == remembered }?.let { return it.id }
+        }
+        return candidates.maxByOrNull { it.updatedAt }?.id
     }
 
     /**
@@ -1859,10 +1954,23 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun send(text: String) {
         val body = text.trim()
         if (body.isEmpty()) return
-        val sessionId = _state.value.sessionId ?: return
         _state.update { it.copy(running = true, error = null, streaming = "") }
         viewModelScope.launch {
             try {
+                // A Session is created HERE, at the moment the user actually starts talking —
+                // not when the app is opened (that produced one empty Session per cold start).
+                // The composer therefore works on a fresh install with no Session at all.
+                val sessionId = _state.value.sessionId ?: createSession().also { id ->
+                    // The Host accounts the new Session to its workspace; re-read so the
+                    // drawer filter admits the row we are about to write into.
+                    runCatching { loadWorkspacesNow() }
+                    followSession(id)
+                    runCatching { refreshSessionsNow() }
+                    // followSession() resets the turn flags for the conversation it opens
+                    // (running = false), which is right for a plain switch but wrong here: we
+                    // are about to submit the very first prompt into this new Session.
+                    _state.update { it.copy(sessionId = id, running = true) }
+                }
                 client.rpc(
                     "session/prompt",
                     JSONObject().put("request", JSONObject().apply {

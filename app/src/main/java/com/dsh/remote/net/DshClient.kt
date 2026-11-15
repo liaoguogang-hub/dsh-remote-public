@@ -63,6 +63,16 @@ class DshClient {
 
     private var socket: WebSocket? = null
 
+    /**
+     * True once the mux handshake has completed. `socket != null` becomes true the moment
+     * [openMux] is called, which is NOT the same thing: frames sent in that window are lost,
+     * and losing `session/follow` is what left the app on a blank conversation.
+     */
+    private var muxReady = false
+
+    /** Stream openings made before the handshake finished, flushed in arrival order. */
+    private val pendingFrames = mutableListOf<String>()
+
     /** `http(s)://host:port` with no trailing slash. Accepts bare hosts too. */
     fun normalizeBase(raw: String): String {
         var s = raw.trim()
@@ -455,6 +465,13 @@ class DshClient {
             .build()
         socket = http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                // The socket is only usable from here. Anything opened while the handshake was
+                // in flight (a cold start opens `session/follow` immediately) is flushed now,
+                // in the order it was requested, before onOpen() lets the caller queue more.
+                muxReady = true
+                val queued = pendingFrames.toList()
+                pendingFrames.clear()
+                queued.forEach { runCatching { webSocket.send(it) } }
                 onOpen()
             }
 
@@ -463,10 +480,12 @@ class DshClient {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
+                muxReady = false
                 onClosed(t)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                muxReady = false
                 onClosed(null)
             }
         })
@@ -482,12 +501,30 @@ class DshClient {
             put("endpoint", endpoint)
             put("payload", JSONObject().put("args", args))
         }
-        socket?.send(frame.toString())
+        val text = frame.toString()
+        val ws = socket
+        if (ws == null || !muxReady) {
+            // No live socket yet, or the handshake is in flight: hold the frame and let the
+            // handshake callback send it. Dropping it here loses the follow stream.
+            pendingFrames += text
+            return
+        }
+        ws.send(text)
     }
 
     /** Cancel one logical stream (Host drops frames for finished ids). */
     fun cancelStream(streamId: String) {
-        socket?.send(JSONObject().apply {
+        val ws = socket
+        if (ws == null || !muxReady) {
+            // The open for this stream never reached the Host: withdraw it from the queue so a
+            // handshake does not resurrect a follow the caller has already abandoned.
+            pendingFrames.removeAll { text ->
+                runCatching { JSONObject(text).optString("streamId") == streamId }
+                    .getOrDefault(false)
+            }
+            return
+        }
+        ws.send(JSONObject().apply {
             put("type", "cancel")
             put("streamId", streamId)
         }.toString())
@@ -496,6 +533,8 @@ class DshClient {
     fun closeMux() {
         runCatching { socket?.close(1000, "bye") }
         socket = null
+        muxReady = false
+        pendingFrames.clear()
     }
 
     fun reset() {

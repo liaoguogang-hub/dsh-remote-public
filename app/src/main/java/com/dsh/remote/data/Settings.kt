@@ -80,6 +80,18 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_LAST_SESSION, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_LAST_SESSION, value).apply()
 
+    /**
+     * Title of that Session, remembered for the same reason.
+     *
+     * The header renders a blank title as "新对话". On a cold start the session list and the
+     * Host snapshot both arrive a moment later, so without this the first frames of every
+     * launch showed "新对话" over a conversation that was about to load — indistinguishable
+     * from the app having just created an empty one.
+     */
+    var lastSessionTitle: String
+        get() = prefs.getString(KEY_LAST_SESSION_TITLE, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_LAST_SESSION_TITLE, value).apply()
+
     /** Drawer ordering: "updated" (最近更新) or "manual" (手动排序 / Host order). */
     var sessionOrderBy: String
         get() = prefs.getString(KEY_SESSION_ORDER, "updated").orEmpty().ifEmpty { "updated" }
@@ -151,6 +163,7 @@ class Settings(context: Context) {
         const val KEY_COOKIE_URL = "auth_cookie_url"
         const val KEY_COOKIE_OVERRIDE = "auth_cookie_override"
         const val KEY_LAST_SESSION = "last_session_id"
+    const val KEY_LAST_SESSION_TITLE = "last_session_title"
         const val KEY_SESSION_ORDER = "session_order_by"
         const val KEY_SESSION_ARCHIVED = "session_archived_filter"
         const val KEY_CUSTOM_HISTORY = "custom_url_history"
